@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.curves.base import Pillar
 from emrates.curves.factory import build_curve_builder, load_country_config
+from emrates.curves.fra_strip import extend_with_fra_strip, parse_fra_period
 from emrates.data.bbg_client import BbgClient
 from emrates.data.calendars import Calendar, CalendarSet
 from emrates.data.excel_loader import InputsBCsLoader
@@ -27,15 +28,9 @@ from emrates.reports.priced_bc import priced_bc_report
 
 COUNTRIES = ["brazil", "mexico", "chile", "colombia", "south_africa", "poland", "czech", "hungary"]
 
-# Czech/Poland/Hungary's Tickers rows mix FRA tickers (xxFR..., no MATURITY field,
-# not wired up yet) with the swap tickers we actually want (xxSW...) — filter to
-# the latter until the FRAs are handled (they'd give short-end coverage we don't
-# have yet: today's swap-only pillars start at 1Y).
-CURVE_TICKER_FILTERS = {
-    "czech": lambda ticker: "SW" in ticker.upper(),
-    "poland": lambda ticker: "SW" in ticker.upper(),
-    "hungary": lambda ticker: "SW" in ticker.upper(),
-}
+# Czech/Poland/Hungary's Tickers rows mix FRA tickers (xxFR..., short end,
+# handled separately via fra_strip.py) with swap tickers (xxSW..., 1Y+).
+FRA_STRIP_COUNTRIES = {"czech", "poland", "hungary"}
 
 
 def resolve_maturities(bbg: BbgClient, country: str, curve_tickers: list, calendar) -> list:
@@ -70,11 +65,13 @@ def main() -> None:
         # for now via lowercase + underscore.
         country_tickers = [t for t in tickers if t.country.strip().lower().replace(" ", "_") == country]
         policy_ticker = next((t for t in country_tickers if t.kind.lower() == "policy"), None)
-        curve_tickers = [t for t in country_tickers if t.kind.lower() == "curve"]
+        all_curve_tickers = [t for t in country_tickers if t.kind.lower() == "curve"]
 
-        ticker_filter = CURVE_TICKER_FILTERS.get(country)
-        if ticker_filter:
-            curve_tickers = [t for t in curve_tickers if ticker_filter(t.ticker)]
+        fra_tickers = []
+        curve_tickers = all_curve_tickers
+        if country in FRA_STRIP_COUNTRIES:
+            fra_tickers = [t for t in all_curve_tickers if "FR" in t.ticker.upper() and "SW" not in t.ticker.upper()]
+            curve_tickers = [t for t in all_curve_tickers if "SW" in t.ticker.upper()]
 
         if policy_ticker is None or not curve_tickers:
             print(f"[{country}] sem tickers Policy/Curve na planilha (ou nome do país não bate) — pulei.")
@@ -87,7 +84,7 @@ def main() -> None:
         pillars_maturities = resolve_maturities(bbg, country, curve_tickers, calendar)
 
         cfg = load_country_config(country)
-        prices = bbg.last_prices([policy_ticker.ticker] + [t.ticker for t in curve_tickers])
+        prices = bbg.last_prices([policy_ticker.ticker] + [t.ticker for t in curve_tickers] + [t.ticker for t in fra_tickers])
         current_policy_rate = prices[policy_ticker.ticker] / 100.0
 
         pillars = [
@@ -95,6 +92,16 @@ def main() -> None:
             for t, maturity in zip(curve_tickers, pillars_maturities)
         ]
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
+
+        if fra_tickers:
+            descriptions = bbg.reference_fields([t.ticker for t in fra_tickers], ["SECURITY_DES"])
+            fra_data = [
+                (*parse_fra_period(row["SECURITY_DES"]), prices[row["ticker"]] / 100.0)
+                for _, row in descriptions.iterrows()
+            ]
+            spot_date = calendar.add_business_days(valuation_date, 2)
+            curve = extend_with_fra_strip(curve, spot_date, current_policy_rate, fra_data, calendar)
+
         save_curve(curve, settings["paths"]["processed_dir"], country)
 
         # +1: strip_meeting_path needs one meeting past the horizon to read the
