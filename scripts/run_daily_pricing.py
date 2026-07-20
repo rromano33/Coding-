@@ -10,6 +10,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import pandas as pd
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -87,10 +88,13 @@ def main() -> None:
         prices = bbg.last_prices([policy_ticker.ticker] + [t.ticker for t in curve_tickers] + [t.ticker for t in fra_tickers])
         current_policy_rate = prices[policy_ticker.ticker] / 100.0
 
-        pillars = [
-            Pillar(maturity=maturity, rate=prices[t.ticker] / 100.0)
-            for t, maturity in zip(curve_tickers, pillars_maturities)
-        ]
+        pillars = []
+        for t, maturity in zip(curve_tickers, pillars_maturities):
+            rate = prices[t.ticker] / 100.0
+            if pd.isna(rate):
+                print(f"[{country}] pulei {t.ticker}: preço veio NaN da Bloomberg (sem cotação nesse ponto?).")
+                continue
+            pillars.append(Pillar(maturity=maturity, rate=rate))
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
 
         if fra_tickers:
@@ -110,7 +114,11 @@ def main() -> None:
                         f"SECURITY_DES={row['SECURITY_DES']!r} nem NAME={row['NAME']!r}"
                     )
                     continue
-                fra_data.append((*period, prices[row["ticker"]] / 100.0))
+                rate = prices[row["ticker"]] / 100.0
+                if pd.isna(rate):
+                    print(f"[{country}] pulei {row['ticker']}: preço veio NaN da Bloomberg (sem cotação nesse ponto?).")
+                    continue
+                fra_data.append((*period, rate))
             spot_date = calendar.add_business_days(valuation_date, 2)
             curve = extend_with_fra_strip(curve, spot_date, current_policy_rate, fra_data, calendar)
 
