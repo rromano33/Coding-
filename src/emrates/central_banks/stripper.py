@@ -58,7 +58,7 @@ def strip_meeting_path(
                 level_before_bps=before * 1e4,
                 level_after_bps=after * 1e4,
                 implied_change_bps=change_bps,
-                cumulative_change_from_spot_bps=(after - current_policy_rate) * 1e4,
+                cumulative_change_from_spot_bps=cumulative,
             )
         )
     return results

@@ -24,6 +24,24 @@ def test_flat_curve_prices_no_hikes_or_cuts():
         assert r.implied_change_bps == pytest.approx(0.0, abs=1e-6)
 
 
+def test_cumulative_matches_sum_of_implied_changes_even_if_policy_rate_ticker_disagrees_with_stub():
+    # current_policy_rate comes from a separate Bloomberg ticker than the curve
+    # itself, so it never matches the curve's own spot->first-meeting stub rate
+    # exactly. cumulative_change_from_spot_bps must still tie out to the sum of
+    # the displayed implied_change_bps column (a flat curve prices zero hikes,
+    # regardless of what current_policy_rate says).
+    valuation_date = date(2026, 1, 5)
+    meetings = [date(2026, 3, 1), date(2026, 4, 15), date(2026, 6, 1)]
+    curve = _flat_curve(valuation_date, 0.12, meetings)
+
+    result = strip_meeting_path(curve, meetings, current_policy_rate=0.05)
+    running = 0.0
+    for r in result:
+        running += r.implied_change_bps
+        assert r.cumulative_change_from_spot_bps == pytest.approx(running, abs=1e-6)
+        assert r.cumulative_change_from_spot_bps == pytest.approx(0.0, abs=1e-6)
+
+
 def test_curve_pricing_a_hike_shows_positive_change():
     valuation_date = date(2026, 1, 5)
     meeting_1 = date(2026, 3, 1)

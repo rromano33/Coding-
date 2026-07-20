@@ -18,7 +18,10 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-COUNTRIES = ["brazil", "mexico", "chile", "colombia", "south_africa", "poland", "czech", "hungary"]
+# Order matters for layout: LatAm fills row 1 (4 cols), CEMEA fills row 2,
+# with south_africa placed last so it lands in the same column as colombia
+# (directly below it) in the fixed 4-column card grid — see .grid CSS below.
+COUNTRIES = ["brazil", "mexico", "chile", "colombia", "poland", "czech", "hungary", "south_africa"]
 COUNTRY_LABELS = {
     "brazil": "Brasil",
     "mexico": "México",
@@ -190,11 +193,15 @@ def main() -> None:
     )
     domain = max(30.0, max_abs)
 
-    heat_header = "".join(f'<th class="heat-col">M{i + 1}</th>' for i in range(MEETINGS_SHOWN))
+    # Countries as columns, meetings (ordinal — 1ª, 2ª, ...) as rows. Ordinal
+    # labels rather than calendar months: each country's meetings fall on
+    # different dates, so a shared row only makes sense by meeting order, and
+    # "M1" read as "Mês 1" (month) was ambiguous in Portuguese anyway.
+    heat_header = "".join(f'<th class="heat-col">{c["label"]}</th>' for c in countries_data)
     heat_rows = []
-    for c in countries_data:
+    for i in range(MEETINGS_SHOWN):
         cells = []
-        for i in range(MEETINGS_SHOWN):
+        for c in countries_data:
             if i < len(c["rows"]):
                 row = c["rows"][i]
                 bps = row["cumulative_bps"]
@@ -207,7 +214,7 @@ def main() -> None:
                 )
             else:
                 cells.append('<td class="heat-cell heat-empty">—</td>')
-        heat_rows.append(f'<tr><th class="heat-row-label">{c["label"]}</th>{"".join(cells)}</tr>')
+        heat_rows.append(f'<tr><th class="heat-row-label">{i + 1}ª reunião</th>{"".join(cells)}</tr>')
 
     any_1d = any(c["has_1d"] for c in countries_data)
     any_5d = any(c["has_5d"] for c in countries_data)
@@ -269,7 +276,12 @@ def main() -> None:
   @media (prefers-color-scheme: dark) {{ .heat-cell {{ background: var(--cell-dark); }} }}
   .heat-empty {{ color: var(--ink-muted); background: transparent !important; }}
   .history-note {{ font-size: 12px; color: var(--ink-muted); margin: -20px 0 24px; }}
-  .grid {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }}
+  /* Fixed 4 columns (not auto-fill) so layout order is predictable: row 1 is
+     LatAm, row 2 is CEMEA, and south_africa (last in COUNTRIES) lands in
+     colombia's column, directly below it. */
+  .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }}
+  @media (max-width: 1100px) {{ .grid {{ grid-template-columns: repeat(2, 1fr); }} }}
+  @media (max-width: 560px) {{ .grid {{ grid-template-columns: 1fr; }} }}
   .card {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }}
   .card-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }}
   .policy-rate {{ font-size: 12px; color: var(--ink-secondary); }}
