@@ -79,7 +79,11 @@ def main() -> None:
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
         save_curve(curve, settings["paths"]["processed_dir"], country)
 
-        meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date)
+        # +1: strip_meeting_path needs one meeting past the horizon to read the
+        # priced change *at* the last meeting you actually care about (see
+        # central_banks/stripper.py's docstring).
+        horizon = settings["reporting"]["meetings_horizon"]
+        meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon + 1)
         report = priced_bc_report(curve, meetings, current_policy_rate)
         out_path = Path(settings["paths"]["processed_dir"]) / f"priced_bc_{country}_{valuation_date}.csv"
         report.to_csv(out_path, index=False)

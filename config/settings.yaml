@@ -56,3 +56,12 @@ positions_columns:
 
 bloomberg:
   default_field: "PX_LAST"
+
+reporting:
+  # Limita o priced_bc a essa quantidade de próximas reuniões. A aba Dates
+  # tem séries de reunião bem mais longas que o calendário real confirmado
+  # de cada BC (a maioria não confirma datas além de 1-2 anos à frente) —
+  # sem esse limite, reuniões distantes acabam usando a curva extrapolada
+  # além do último vencimento real de mercado, o que não é precificação
+  # confiável. Ajuste esse número se quiser ver mais/menos à frente.
+  meetings_horizon: 12
