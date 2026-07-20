@@ -1,6 +1,7 @@
 xbbg
 pandas
 numpy
+scipy
 pyyaml
 openpyxl
 pytest

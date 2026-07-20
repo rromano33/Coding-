@@ -22,6 +22,7 @@ from emrates.data.calendars import Calendar, CalendarSet
 from emrates.data.excel_loader import InputsBCsLoader
 from emrates.data.ticker_parsing import MATURITY_PARSERS
 from emrates.data.curve_store import save_curve
+from emrates.curves.nss import fit_nss_curve
 from emrates.reports.priced_bc import priced_bc_report
 
 COUNTRIES = ["brazil", "mexico", "chile", "colombia", "south_africa", "poland", "czech", "hungary"]
@@ -84,7 +85,12 @@ def main() -> None:
         # central_banks/stripper.py's docstring).
         horizon = settings["reporting"]["meetings_horizon"]
         meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon + 1)
-        report = priced_bc_report(curve, meetings, current_policy_rate)
+        # Smoothed (NSS) curve for this report only — meeting-dated forwards over
+        # short windows far from today amplify the exact curve's pillar-to-pillar
+        # market noise into spurious swings (see curves/nss.py docstring). Position
+        # valuation/PnL keeps using the exact `curve`, saved above.
+        smoothed_curve = fit_nss_curve(curve)
+        report = priced_bc_report(smoothed_curve, meetings, current_policy_rate)
         out_path = Path(settings["paths"]["processed_dir"]) / f"priced_bc_{country}_{valuation_date}.csv"
         report.to_csv(out_path, index=False)
         print(f"[{country}] {len(report)} reuniões precificadas -> {out_path}")
