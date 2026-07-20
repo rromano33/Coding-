@@ -30,8 +30,10 @@ class BbgClient:
             )
 
     def _check_bdp_result(self, df: pd.DataFrame, tickers: list[str], fields: list[str]) -> None:
+        # len(df), not df.empty: some xbbg builds (e.g. the Rust/narwhals-backed
+        # "xbbg-async") return a dataframe-like object without pandas' .empty attr.
         missing = [f for f in fields if f.upper() not in df.columns]
-        if df.empty or missing:
+        if len(df) == 0 or missing:
             raise RuntimeError(
                 f"BDP não retornou {missing or 'nada'} para {tickers} (colunas recebidas: {list(df.columns)}). "
                 "Isso normalmente é sessão do Bloomberg Terminal caída no meio da consulta, não bug de código — "
@@ -52,7 +54,7 @@ class BbgClient:
         parsing it out of the ticker string, which is fragile and country-specific."""
         self._require_blp()
         df = blp.bdp(tickers=tickers, flds=fields)
-        if df.empty:
+        if len(df) == 0:
             raise RuntimeError(
                 f"BDP não retornou nada para {tickers}. Provavelmente sessão do Bloomberg Terminal caída "
                 "no meio da consulta — procure 'SessionConnectionDown' / 'SessionTerminated' no terminal, "
