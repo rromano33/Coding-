@@ -1,0 +1,39 @@
+country: poland
+central_bank:
+  committee: "Rada Polityki Pieniężnej (RPP) — Narodowy Bank Polski (NBP)"
+  meeting_frequency: "mensal"
+
+reference_instrument: "Swap WIBOR 6M (PLN IRS)"
+floating_index: "WIBOR 6M"
+index_type: term_rate
+
+pillar_type: par_swap
+day_count: ACT/365F                # perna WIBOR; perna fixa cotada em ACT/ACT anual — VERIFICAR se precisamos separar day count por perna
+compounding: exponential
+coupon_frequency_months: 6         # flutuante semestral; fixa é anual — VERIFICAR se o motor precisa de frequências distintas por perna
+fixing_lag_days: 2                 # spot lag T-2 (Varsóvia), padrão IBOR 2006 ISDA
+
+benchmark_transition:
+  status: "EM TRANSIÇÃO ATIVA — CRÍTICO, revisar periodicamente"
+  detail: >
+    Substituto oficial mudou de WIRON para POLSTR (Polish Short Term Rate) em dez/2024.
+    Cronograma KNF/GPW Benchmark (mai/2026): O/N cessa 01/out/2026; T/N e 2W já cessaram
+    22/dez/2025; WIBOR 1Y cessa 22/dez/2025 (cálculo algorítmico até 21/dez/2026); tenores-chave
+    1M/3M/6M seguem até 31/12/2036, mas SEM novos contratos após 31/12/2026 (a partir de
+    01/jan/2027, WIBOR só para book legado). Mercado de POLSTR OIS em formação ativa em 2026
+    (clearing na KDPW_CCP iniciado), mas ainda não maduro/líquido em jul/2026 — WIBOR segue
+    sendo o padrão de mercado dominante por ora.
+  action_item: "Não fechar novas posições referenciadas a WIBOR além de 31/12/2026. Monitorar liquidez do POLSTR OIS para migrar a curva antes disso — provavelmente pillar_type=zero_rate, index_type=overnight_compounded quando migrar."
+
+bloomberg:
+  curve_family: "PZSW (Annual Settlement & Compounding vs 6M WIBOR) — confiança moderada, fonte não primária"
+  confidence: media
+
+sources:
+  - "KNF — WIBID/WIBOR cessation roadmap"
+  - "GPW Benchmark"
+  - "KNF — Recommendation on POLSTR index"
+  - "OSTTRA — POLSTR MarkitWire"
+
+notes:
+  - "País com maior risco de mudança de convenção no curto prazo entre os 8 — revisar este arquivo com prioridade antes de qualquer entrega em produção."

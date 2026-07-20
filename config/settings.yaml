@@ -1,0 +1,40 @@
+# Caminhos e mapeamento de colunas. Rode scripts/inspect_inputs.py localmente
+# e ajuste os *_columns abaixo para bater com as colunas reais da planilha —
+# hoje são um chute a partir da descrição ("aba Tickers com Policy/curve",
+# "aba Dates com reuniões e feriados").
+
+paths:
+  inputs_bcs: "Data/Inputs_BCs.xlsx"
+  bbg_cache_dir: "Data/raw"
+  processed_dir: "Data/processed"
+
+sheets:
+  tickers_sheet: "Tickers"
+  dates_sheet: "Dates"
+  positions_sheet: "Posições"
+
+tickers_columns:
+  country: "Country"
+  kind: "Type"      # valores esperados: "Policy" | "Curve"
+  tenor: "Tenor"
+  ticker: "Ticker"
+
+dates_columns:
+  country: "Country"
+  event_type: "EventType"  # valores esperados: "Meeting" | "Holiday"
+  date: "Date"
+
+positions_columns:
+  # layout proposto para a nova aba "Posições" — ver README.md
+  TradeID: "TradeID"
+  Country: "Country"
+  TradeDate: "TradeDate"
+  StartDate: "StartDate"
+  MaturityDate: "MaturityDate"
+  PayReceive: "PayReceive"   # "pay" | "receive" (perna fixa)
+  Notional: "Notional"
+  FixedRate: "FixedRate"
+  Currency: "Currency"
+
+bloomberg:
+  default_field: "PX_LAST"

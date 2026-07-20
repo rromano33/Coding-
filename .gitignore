@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Dados locais — planilha real do usuário e caches, nunca versionados
+Data/Inputs_BCs.xlsx
+Data/raw/*
+Data/processed/*
+!Data/raw/.gitkeep
+!Data/processed/.gitkeep

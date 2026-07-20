@@ -1,0 +1,28 @@
+country: chile
+central_bank:
+  committee: "Reunión de Política Monetaria (RPM) — Consejo del Banco Central de Chile"
+  meeting_frequency: "8x/ano"
+
+reference_instrument: "Swap Promedio Cámara (SPC) — CLP nominal ou UF"
+floating_index: "ICP (Índice de Cámara Promedio), sobre a TCIP"
+index_type: overnight_compounded
+
+pillar_type: zero_rate             # bullet até 18 meses — VERIFICAR frequência de cupom acima de 18m
+day_count: ACT/360
+compounding: exponential
+coupon_frequency_months: null      # válido para prazos <=18m; para >18m ver nota abaixo
+fixing_lag_days: 0                 # TCIP/ICP do dia publicada pela ABIF até as 20h do próprio dia útil
+
+benchmark_transition: null
+
+bloomberg:
+  curve_family: "VERIFICAR — mnemônico não confirmado publicamente (ligado a CLICP)"
+  confidence: baixa
+
+sources:
+  - "BCCh — Reglamento ICP/ICP Real (CBF)"
+  - "BCCh — Estudio N°56, Swap de Tasas Promedio Cámara y Seguro Inflación"
+
+notes:
+  - "VERIFICAR: para swaps SPC acima de 18 meses as fontes sugerem pagamento periódico (possivelmente semestral), não bullet — se o book tiver posições >18m, mudar pillar_type para par_swap e confirmar a frequência antes de confiar no PnL."
+  - "SPC-UF (indexado à inflação) é uma curva separada, fora do escopo desta config (que cobre só o nominal SPC-CLP)."

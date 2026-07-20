@@ -1,0 +1,29 @@
+country: brazil
+central_bank:
+  committee: "Copom"
+  meeting_frequency: "8x/ano, a cada 45 dias (terça/quarta)"
+
+reference_instrument: "Futuro de DI de Um Dia (DI1) — B3"
+floating_index: "CDI (Taxa DI-Cetip Over)"
+index_type: overnight_compounded   # taxa composta diariamente, não taxa a termo
+
+pillar_type: zero_rate             # bullet — sem cupom periódico, equivalente a taxa zero
+day_count: BUS/252
+compounding: exponential           # capitalização exponencial (padrão do mercado BR)
+coupon_frequency_months: null
+fixing_lag_days: 1                 # Taxa DI de D é divulgada pela B3 em D+1
+
+benchmark_transition: null         # CDI segue vigente, sem transição em curso
+
+bloomberg:
+  curve_family: "DI1 (futuro) — confirmado"
+  otc_swap_family: "BRSW — VERIFICAR no terminal, não encontrado em doc público"
+  confidence: alta_para_futuro_media_para_otc
+
+sources:
+  - "B3 — Metodologia de Apuração da Taxa DI"
+  - "B3 — Manual de Apreçamento de Futuros"
+
+notes:
+  - "DI1 é o instrumento mais líquido e a referência de mercado; Swap DI x Pré OTC é economicamente equivalente."
+  - "Sem cupom intermediário: PnL/valuation tratam o DI1 como taxa zero (ver pricing/discounting.py, ramo bullet)."

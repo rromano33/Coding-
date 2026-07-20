@@ -1,0 +1,31 @@
+country: south_africa
+central_bank:
+  committee: "Monetary Policy Committee (MPC) — SARB"
+  meeting_frequency: "6x/ano (bimestral)"
+
+reference_instrument: "Swap JIBAR 3M (ISDA rate option ZAR-JIBAR-SAFEX)"
+floating_index: "JIBAR 3M"
+index_type: term_rate              # taxa a termo, fixada no início do período — NÃO overnight composta
+
+pillar_type: par_swap
+day_count: ACT/365                 # mais citada; VERIFICAR pois 30/360 e ACT/360 também aparecem dependendo do dealer
+compounding: exponential
+coupon_frequency_months: 3
+fixing_lag_days: 0                 # JIBAR fixa no próprio reset date (~11h Joanesburgo) — spot lag zero
+
+benchmark_transition:
+  status: "em andamento — confirmado, com cronograma"
+  detail: "SARB anunciou em 03/dez/2025 a cessação definitiva de todos os tenores do JIBAR após a última publicação em 31/12/2026, substituído por ZARONIA (overnight RFR). Em jul/2026 o JIBAR ainda é o padrão de mercado dominante; liquidez em ZARONIA crescendo mas ainda minoritária."
+  action_item: "Revisar este arquivo antes de dez/2026 — pillar_type/index provavelmente precisarão migrar para ZARONIA (overnight_compounded, provavelmente zero_rate/OIS-style) conforme a liquidez migrar."
+
+bloomberg:
+  curve_family: "VERIFICAR — 'SASW' é o padrão de nomenclatura esperado (mesma família de PZSW/CKSW/HFSW) mas não confirmado em fonte primária"
+  confidence: baixa
+
+sources:
+  - "SARB — JIBAR"
+  - "SARB MPG — Transition Approach Recommendations 2026"
+  - "ISDA — JIBAR Cessation Guidance (dez/2025)"
+
+notes:
+  - "Cotação de mercado costuma usar base NACQ (Nominal Annual Compounded Quarterly) para a taxa fixa anualizada — isso é convenção de anualização/cotação, não composição diária estilo OIS."

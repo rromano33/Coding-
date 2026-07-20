@@ -1,0 +1,28 @@
+country: czech
+central_bank:
+  committee: "Bankovní rada (Bank Board) — ČNB"
+  meeting_frequency: "8x/ano, decisão às 14:30 do dia da reunião"
+
+reference_instrument: "Swap PRIBOR 6M (CZK IRS)"
+floating_index: "PRIBOR 6M"
+index_type: term_rate
+
+pillar_type: par_swap
+day_count: ACT/360
+compounding: exponential
+coupon_frequency_months: 6         # flutuante semestral; fixa anual
+fixing_lag_days: 2                 # spot lag T-2, fixing às 11h Praga
+
+benchmark_transition: null         # sem mandato de substituição do PRIBOR; CZEONIA existe como RFR alternativo mas não é compulsório — VERIFICAR periodicamente
+
+bloomberg:
+  curve_family: "CKSW (Annual fixed vs 6M PRIBOR) — confiança moderada, fonte não primária"
+  confidence: media
+
+sources:
+  - "ČNB — PRIBOR"
+  - "ČNB — CZEONIA"
+  - "Czech Financial Benchmark Facility — Benchmark Statement PRIBOR"
+
+notes:
+  - "Tenores 2M e 9M do PRIBOR foram descontinuados (abr/2025) por baixa representatividade — sem impacto no tenor de referência 6M usado aqui."

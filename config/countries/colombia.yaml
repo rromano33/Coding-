@@ -1,0 +1,28 @@
+country: colombia
+central_bank:
+  committee: "Junta Directiva — Banco de la República (BanRep)"
+  meeting_frequency: "12 reuniões/ano, mas só 8 com decisão de taxa"
+
+reference_instrument: "Swap IBR (OIS)"
+floating_index: "IBR (Indicador Bancario de Referencia)"
+index_type: overnight_compounded
+
+pillar_type: zero_rate             # bullet para prazos curtos — VERIFICAR corte de prazo/frequência para tenores longos
+day_count: ACT/360
+compounding: exponential
+coupon_frequency_months: null
+fixing_lag_days: 1                 # IBR overnight fixado/leiloado em D às ~11h, mas vigora para o dia seguinte (t+1)
+
+benchmark_transition: null         # IBR vigente desde 2008, sem descontinuação identificada
+
+bloomberg:
+  curve_family: "VERIFICAR — tentativas 'CLSW'/'COSW'/'IBRS' não validadas em fonte pública"
+  confidence: baixa
+
+sources:
+  - "BanRep — Overnight Interbank Rate (IBR), glossário"
+  - "BanRep — Manual de uso del IBR"
+
+notes:
+  - "Particularidade de fixing: a taxa IBR publicada no dia D é para vigência em D+1 — atenção ao alinhar isso no motor de acumulação (calendars.py / bootstrap), diferente de Brasil/Chile onde a taxa do dia vale para o próprio dia."
+  - "VERIFICAR: frequência de cupom para tenores mais longos (1Y+) — fontes públicas não confirmaram o corte exato entre bullet e periódico."
