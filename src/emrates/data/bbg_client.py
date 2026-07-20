@@ -29,9 +29,20 @@ class BbgClient:
                 "This must run locally with a live Terminal session, not in a cloud environment."
             )
 
+    def _check_bdp_result(self, df: pd.DataFrame, tickers: list[str], fields: list[str]) -> None:
+        missing = [f for f in fields if f.upper() not in df.columns]
+        if df.empty or missing:
+            raise RuntimeError(
+                f"BDP não retornou {missing or 'nada'} para {tickers} (colunas recebidas: {list(df.columns)}). "
+                "Isso normalmente é sessão do Bloomberg Terminal caída no meio da consulta, não bug de código — "
+                "procure 'SessionConnectionDown' / 'SessionTerminated' no terminal, confirme que o Terminal "
+                "está logado e tente de novo."
+            )
+
     def last_prices(self, tickers: list[str], field: str = "PX_LAST") -> pd.Series:
         self._require_blp()
         df = blp.bdp(tickers=tickers, flds=[field])
+        self._check_bdp_result(df, tickers, [field])
         return df[field.upper()]
 
     def reference_fields(self, tickers: list[str], fields: list[str]) -> pd.DataFrame:
@@ -40,7 +51,14 @@ class BbgClient:
         instruments, TENOR for generic/constant-maturity curve points) rather than
         parsing it out of the ticker string, which is fragile and country-specific."""
         self._require_blp()
-        return blp.bdp(tickers=tickers, flds=fields)
+        df = blp.bdp(tickers=tickers, flds=fields)
+        if df.empty:
+            raise RuntimeError(
+                f"BDP não retornou nada para {tickers}. Provavelmente sessão do Bloomberg Terminal caída "
+                "no meio da consulta — procure 'SessionConnectionDown' / 'SessionTerminated' no terminal, "
+                "confirme que o Terminal está logado e tente de novo."
+            )
+        return df
 
     def history(
         self,
