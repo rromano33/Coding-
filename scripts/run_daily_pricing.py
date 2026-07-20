@@ -95,10 +95,14 @@ def main() -> None:
 
         if fra_tickers:
             descriptions = bbg.reference_fields([t.ticker for t in fra_tickers], ["SECURITY_DES"])
-            fra_data = [
-                (*parse_fra_period(row["SECURITY_DES"]), prices[row["ticker"]] / 100.0)
-                for _, row in descriptions.iterrows()
-            ]
+            fra_data = []
+            for _, row in descriptions.iterrows():
+                try:
+                    period = parse_fra_period(row["SECURITY_DES"])
+                except ValueError as exc:
+                    print(f"[{country}] pulei {row['ticker']}: {exc}")
+                    continue
+                fra_data.append((*period, prices[row["ticker"]] / 100.0))
             spot_date = calendar.add_business_days(valuation_date, 2)
             curve = extend_with_fra_strip(curve, spot_date, current_policy_rate, fra_data, calendar)
 
