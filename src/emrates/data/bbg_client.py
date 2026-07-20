@@ -34,6 +34,14 @@ class BbgClient:
         df = blp.bdp(tickers=tickers, flds=[field])
         return df[field.upper()]
 
+    def reference_fields(self, tickers: list[str], fields: list[str]) -> pd.DataFrame:
+        """Raw BDP pull of arbitrary reference fields — used to figure out how to
+        resolve each ticker's maturity (MATURITY / LAST_TRADEABLE_DT for dated
+        instruments, TENOR for generic/constant-maturity curve points) rather than
+        parsing it out of the ticker string, which is fragile and country-specific."""
+        self._require_blp()
+        return blp.bdp(tickers=tickers, flds=fields)
+
     def history(
         self,
         tickers: list[str],
