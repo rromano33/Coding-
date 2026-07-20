@@ -20,12 +20,29 @@ from emrates.curves.factory import build_curve_builder, load_country_config
 from emrates.data.bbg_client import BbgClient
 from emrates.data.calendars import Calendar, CalendarSet
 from emrates.data.excel_loader import InputsBCsLoader
-from emrates.data.ticker_parsing import MATURITY_PARSERS
+from emrates.data.ticker_parsing import TICKER_STRING_PARSING_COUNTRIES, brazil_di1_maturity
 from emrates.data.curve_store import save_curve
 from emrates.curves.nss import fit_nss_curve
 from emrates.reports.priced_bc import priced_bc_report
 
 COUNTRIES = ["brazil", "mexico", "chile", "colombia", "south_africa", "poland", "czech", "hungary"]
+
+# Czech/Poland/Hungary's Tickers rows mix FRA tickers (xxFR..., no MATURITY field,
+# not wired up yet) with the swap tickers we actually want (xxSW...) — filter to
+# the latter until the FRAs are handled (they'd give short-end coverage we don't
+# have yet: today's swap-only pillars start at 1Y).
+CURVE_TICKER_FILTERS = {
+    "czech": lambda ticker: "SW" in ticker.upper(),
+    "poland": lambda ticker: "SW" in ticker.upper(),
+    "hungary": lambda ticker: "SW" in ticker.upper(),
+}
+
+
+def resolve_maturities(bbg: BbgClient, country: str, curve_tickers: list, calendar) -> list:
+    if country in TICKER_STRING_PARSING_COUNTRIES:
+        return [brazil_di1_maturity(t.ticker, calendar) for t in curve_tickers]
+    maturities = bbg.maturities([t.ticker for t in curve_tickers])
+    return [maturities[t.ticker] for t in curve_tickers]
 
 
 def main() -> None:
@@ -54,20 +71,20 @@ def main() -> None:
         country_tickers = [t for t in tickers if t.country.strip().lower().replace(" ", "_") == country]
         policy_ticker = next((t for t in country_tickers if t.kind.lower() == "policy"), None)
         curve_tickers = [t for t in country_tickers if t.kind.lower() == "curve"]
+
+        ticker_filter = CURVE_TICKER_FILTERS.get(country)
+        if ticker_filter:
+            curve_tickers = [t for t in curve_tickers if ticker_filter(t.ticker)]
+
         if policy_ticker is None or not curve_tickers:
             print(f"[{country}] sem tickers Policy/Curve na planilha (ou nome do país não bate) — pulei.")
             continue
 
-        maturity_parser = MATURITY_PARSERS[country]
         calendar = calendars.get(country) or Calendar(country, holidays=set())
         if calendars.get(country) is None:
             print(f"[{country}] sem coluna de feriados na aba Dates — usando calendário vazio (dias úteis = seg-sex).")
 
-        try:
-            pillars_maturities = [maturity_parser(t.ticker, calendar) for t in curve_tickers]
-        except NotImplementedError as exc:
-            print(f"[{country}] {exc}")
-            continue
+        pillars_maturities = resolve_maturities(bbg, country, curve_tickers, calendar)
 
         cfg = load_country_config(country)
         prices = bbg.last_prices([policy_ticker.ticker] + [t.ticker for t in curve_tickers])

@@ -16,8 +16,16 @@ fixing_lag_days: 2                 # spot lag T-2, fixing às 11h Praga
 benchmark_transition: null         # sem mandato de substituição do PRIBOR; CZEONIA existe como RFR alternativo mas não é compulsório — VERIFICAR periodicamente
 
 bloomberg:
-  curve_family: "CKSW (Annual fixed vs 6M PRIBOR) — confiança moderada, fonte não primária"
-  confidence: media
+  curve_family: "CKSW — confirmado via inspect_bbg_tickers.py (CKSW1, CKSW2, CKSW3, CKSW5, CKSW10 BGN Curncy), tipo FIXED_FLOAT"
+  security_typ2: "FIXED_FLOAT"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta_para_ticker
+  tickers_confirmados_2026-07-20:
+    - "CKSW1 BGN Curncy -> 2027-07-22"
+    - "CKSW2 BGN Curncy -> 2028-07-22"
+    - "CKSW3 BGN Curncy -> 2029-07-22"
+    - "CKSW5 BGN Curncy -> 2031-07-22"
+    - "CKSW10 BGN Curncy -> 2036-07-22"
 
 sources:
   - "ČNB — PRIBOR"
@@ -26,3 +34,4 @@ sources:
 
 notes:
   - "Tenores 2M e 9M do PRIBOR foram descontinuados (abr/2025) por baixa representatividade — sem impacto no tenor de referência 6M usado aqui."
+  - "GAP DE COBERTURA: só há 5 pilares confirmados (1,2,3,5,10Y) — nada abaixo de 1 ano. A planilha também tem tickers de FRA (CKFR...) que dariam ponta curta, mas ainda não foram integrados ao motor (sem campo MATURITY direto, precisam de parsing do código do período tipo '0AD'). Sem eles, a curva de 0-1Y fica sem dado — atenção se o book tiver posições curtas nesse país."

@@ -3,24 +3,37 @@ central_bank:
   committee: "Monetary Policy Committee (MPC) — SARB"
   meeting_frequency: "6x/ano (bimestral)"
 
-reference_instrument: "Swap JIBAR 3M (ISDA rate option ZAR-JIBAR-SAFEX)"
-floating_index: "JIBAR 3M"
-index_type: term_rate              # taxa a termo, fixada no início do período — NÃO overnight composta
+# MUDANÇA IMPORTANTE (20/07/2026): os tickers reais da planilha (SAOIAA...,
+# tipo FIXED_FLOAT_OIS confirmado via inspect_bbg_tickers.py) NÃO batem com o
+# swap JIBAR 3M a termo que a pesquisa original assumiu — o nome e o tipo
+# apontam para a curva OIS de ZARONIA (a nova taxa overnight, substituta do
+# JIBAR, cuja transição está em andamento). Tratando como OIS por ora;
+# CONFIRMAR com a mesa se o book realmente referencia ZARONIA e não JIBAR.
+reference_instrument: "Swap OIS ZARONIA (tickers SAOIAA...) — a confirmar com a mesa"
+floating_index: "ZARONIA (South African Rand Overnight Index Average)"
+index_type: overnight_compounded
 
-pillar_type: par_swap
-day_count: ACT/365                 # mais citada; VERIFICAR pois 30/360 e ACT/360 também aparecem dependendo do dealer
+pillar_type: zero_rate              # bullet — mesma incerteza de Chile/Colômbia para tenores longos (só 10Y confirmado, sem doc de frequência de cupom)
+day_count: ACT/365                  # herdado da convenção JIBAR anterior — VERIFICAR se ZARONIA usa a mesma
 compounding: exponential
-coupon_frequency_months: 3
-fixing_lag_days: 0                 # JIBAR fixa no próprio reset date (~11h Joanesburgo) — spot lag zero
+coupon_frequency_months: null
+fixing_lag_days: 0                  # VERIFICAR — não pesquisado especificamente para ZARONIA ainda
 
 benchmark_transition:
   status: "em andamento — confirmado, com cronograma"
-  detail: "SARB anunciou em 03/dez/2025 a cessação definitiva de todos os tenores do JIBAR após a última publicação em 31/12/2026, substituído por ZARONIA (overnight RFR). Em jul/2026 o JIBAR ainda é o padrão de mercado dominante; liquidez em ZARONIA crescendo mas ainda minoritária."
-  action_item: "Revisar este arquivo antes de dez/2026 — pillar_type/index provavelmente precisarão migrar para ZARONIA (overnight_compounded, provavelmente zero_rate/OIS-style) conforme a liquidez migrar."
+  detail: "SARB anunciou em 03/dez/2025 a cessação definitiva de todos os tenores do JIBAR após a última publicação em 31/12/2026, substituído por ZARONIA (overnight RFR). Os tickers da planilha do usuário já parecem ser a curva ZARONIA (SAOIAA, FIXED_FLOAT_OIS), não JIBAR — ou seja, a transição já está refletida no book."
+  action_item: "Confirmar com a mesa se SAOIAA é mesmo ZARONIA; se sim, pesquisar day_count/fixing_lag específicos de ZARONIA (day_count ACT/365 aqui é herdado do JIBAR, não confirmado para ZARONIA)."
 
 bloomberg:
-  curve_family: "VERIFICAR — 'SASW' é o padrão de nomenclatura esperado (mesma família de PZSW/CKSW/HFSW) mas não confirmado em fonte primária"
-  confidence: baixa
+  curve_family: "SAOIAA — confirmado via inspect_bbg_tickers.py (SAOIAAA...SAOIAA10 BGN Curncy)"
+  security_typ2: "FIXED_FLOAT_OIS"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta_para_ticker_media_para_convencao
+  tickers_confirmados_2026-07-20:
+    - "SAOIAAA BGN Curncy -> 2026-08-20"
+    - "SAOIAAB BGN Curncy -> 2026-09-20"
+    - "SAOIAAC..SAOIAAI BGN Curncy -> mensal até 2027-04-20"
+    - "SAOIAA1..SAOIAA10 BGN Curncy -> anual até 2036-07-20"
 
 sources:
   - "SARB — JIBAR"
@@ -28,4 +41,5 @@ sources:
   - "ISDA — JIBAR Cessation Guidance (dez/2025)"
 
 notes:
-  - "Cotação de mercado costuma usar base NACQ (Nominal Annual Compounded Quarterly) para a taxa fixa anualizada — isso é convenção de anualização/cotação, não composição diária estilo OIS."
+  - "Pesquisa original (JIBAR 3M, par_swap, NACQ) fica registrada abaixo caso o book use JIBAR legado em paralelo à curva ZARONIA:"
+  - "JIBAR legado: reference_instrument='Swap JIBAR 3M (ZAR-JIBAR-SAFEX)', index_type=term_rate, pillar_type=par_swap, coupon_frequency_months=3, cotação em base NACQ (Nominal Annual Compounded Quarterly)."

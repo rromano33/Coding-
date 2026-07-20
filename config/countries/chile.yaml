@@ -16,8 +16,19 @@ fixing_lag_days: 0                 # TCIP/ICP do dia publicada pela ABIF até as
 benchmark_transition: null
 
 bloomberg:
-  curve_family: "VERIFICAR — mnemônico não confirmado publicamente (ligado a CLICP)"
-  confidence: baixa
+  curve_family: "CHSWNI — confirmado via inspect_bbg_tickers.py (CHSWNIA...CHSWNI10 Curncy)"
+  security_typ2: "NDIRS (Non-Deliverable IRS)"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta
+  tickers_confirmados_2026-07-20:
+    - "CHSWNIA Curncy -> 2026-08-22"
+    - "CHSWNIB Curncy -> 2026-09-22"
+    - "CHSWNIC Curncy -> 2026-10-22"
+    - "CHSWNIF Curncy -> 2027-01-22"
+    - "CHSWNII Curncy -> 2027-04-22"
+    - "CHSWNI1 Curncy -> 2027-07-22"
+    - "CHSWNI1F Curncy -> 2028-01-22"
+    - "CHSWNI2..NI10 Curncy -> anual até 2036-07-22"
 
 sources:
   - "BCCh — Reglamento ICP/ICP Real (CBF)"
@@ -26,3 +37,4 @@ sources:
 notes:
   - "VERIFICAR: para swaps SPC acima de 18 meses as fontes sugerem pagamento periódico (possivelmente semestral), não bullet — se o book tiver posições >18m, mudar pillar_type para par_swap e confirmar a frequência antes de confiar no PnL."
   - "SPC-UF (indexado à inflação) é uma curva separada, fora do escopo desta config (que cobre só o nominal SPC-CLP)."
+  - "Tickers confirmados vão até 10Y (2036) — a maior parte do horizonte da curva está na zona >18m onde a frequência de cupom ainda não está confirmada. Tratando como zero_rate/bullet por ora; revisar se o book tiver posições longas."

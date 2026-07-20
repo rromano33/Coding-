@@ -69,6 +69,19 @@ class BbgClient:
         self._check_bdp_result(df, tickers, [field])
         return df[field]
 
+    def maturities(self, tickers: list[str]) -> pd.Series:
+        """MATURITY reference field, direct from Bloomberg — the right way to resolve
+        a curve ticker's maturity for every instrument type that has one (swaps,
+        NDIRS, etc). Only Brazil's DI1 futures need ticker-string parsing instead
+        (see emrates.data.ticker_parsing.brazil_di1_maturity) since futures expose
+        LAST_TRADEABLE_DT, not MATURITY, and that's a different date (last day you
+        can trade the contract, not the date the curve pillar should sit on)."""
+        self._require_blp()
+        raw = blp.bdp(tickers=tickers, flds=["MATURITY"])
+        df = self._normalize_bdp(raw)
+        self._check_bdp_result(df, tickers, ["MATURITY"])
+        return pd.to_datetime(df["MATURITY"]).dt.date
+
     def reference_fields(self, tickers: list[str], fields: list[str]) -> pd.DataFrame:
         """Pull of arbitrary reference fields, one row per ticker — used to figure out
         how to resolve each ticker's maturity (MATURITY / LAST_TRADEABLE_DT for dated

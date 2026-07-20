@@ -16,8 +16,16 @@ fixing_lag_days: 2                 # spot lag T-2, fixing às 11h
 benchmark_transition: null         # sem reforma regulatória compulsória identificada; HUFONIA existe como RFR desde 2016 mas não é mandatório
 
 bloomberg:
-  curve_family: "HFSW (Annual Settlement & Compounding vs 6M BUBOR) — confiança moderada, fonte não primária"
-  confidence: media
+  curve_family: "HFSW — confirmado via inspect_bbg_tickers.py (HFSW1VC, HFSW2, HFSW3, HFSW5, HFSW10), tipo FIXED_FLOAT"
+  security_typ2: "FIXED_FLOAT"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta_para_ticker
+  tickers_confirmados_2026-07-20:
+    - "HFSW1VC Curncy -> 2027-07-22"
+    - "HFSW2 BGN Curncy -> 2028-07-22"
+    - "HFSW3 BGN Curncy -> 2029-07-22"
+    - "HFSW5 BGN Curncy -> 2031-07-22"
+    - "HFSW10 BGN Curncy -> 2036-07-22"
 
 sources:
   - "MNB — BIRS Regulation"
@@ -26,3 +34,4 @@ sources:
 
 notes:
   - "Particularidade: BUBOR (perna flutuante) e BIRS (fixação/perna fixa do swap) usam day counts diferentes (ACT/360 vs ACT/365) — o motor genérico hoje assume um único day_count por curva; se isso importar para o book, tratar como refinamento futuro."
+  - "GAP DE COBERTURA: só há 5 pilares confirmados (1,2,3,5,10Y) — nada abaixo de 1 ano. A planilha também tem tickers de FRA (HFFR...) que dariam ponta curta, ainda não integrados ao motor (sem campo MATURITY direto). Note também que o 1º ticker é 'HFSW1VC' (sufixo diferente dos demais 'HFSW2'..'HFSW10') — confirmar se isso é só uma particularidade de nomenclatura do tenor 1Y ou algo distinto."

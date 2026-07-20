@@ -26,8 +26,16 @@ benchmark_transition:
   action_item: "Não fechar novas posições referenciadas a WIBOR além de 31/12/2026. Monitorar liquidez do POLSTR OIS para migrar a curva antes disso — provavelmente pillar_type=zero_rate, index_type=overnight_compounded quando migrar."
 
 bloomberg:
-  curve_family: "PZSW (Annual Settlement & Compounding vs 6M WIBOR) — confiança moderada, fonte não primária"
-  confidence: media
+  curve_family: "PZSW — confirmado via inspect_bbg_tickers.py (PZSW1, PZSW2, PZSW3, PZSW5, PZSW10 Curncy), tipo FIXED_FLOAT"
+  security_typ2: "FIXED_FLOAT"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta_para_ticker
+  tickers_confirmados_2026-07-20:
+    - "PZSW1 Curncy -> 2027-07-22"
+    - "PZSW2 Curncy -> 2028-07-22"
+    - "PZSW3 Curncy -> 2029-07-22"
+    - "PZSW5 Curncy -> 2031-07-22"
+    - "PZSW10 Curncy -> 2036-07-22"
 
 sources:
   - "KNF — WIBID/WIBOR cessation roadmap"
@@ -37,3 +45,4 @@ sources:
 
 notes:
   - "País com maior risco de mudança de convenção no curto prazo entre os 8 — revisar este arquivo com prioridade antes de qualquer entrega em produção."
+  - "GAP DE COBERTURA: só há 5 pilares confirmados (1,2,3,5,10Y) — nada abaixo de 1 ano. A planilha também tem tickers de FRA (PZFR...) que dariam ponta curta, ainda não integrados ao motor (sem campo MATURITY direto)."

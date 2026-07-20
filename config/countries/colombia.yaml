@@ -16,8 +16,18 @@ fixing_lag_days: 1                 # IBR overnight fixado/leiloado em D às ~11h
 benchmark_transition: null         # IBR vigente desde 2008, sem descontinuação identificada
 
 bloomberg:
-  curve_family: "VERIFICAR — tentativas 'CLSW'/'COSW'/'IBRS' não validadas em fonte pública"
-  confidence: baixa
+  curve_family: "CLSWIB — confirmado via inspect_bbg_tickers.py (CLSWIBA...CLSWIB10 BGN Curncy)"
+  security_typ2: "FIXED_FLOAT_OIS"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta
+  tickers_confirmados_2026-07-20:
+    - "CLSWIBA BGN Curncy -> 2026-08-22"
+    - "CLSWIBC BGN Curncy -> 2026-10-22"
+    - "CLSWIBF BGN Curncy -> 2027-01-22"
+    - "CLSWIBI BGN Curncy -> 2027-04-22"
+    - "CLSWIB1 BGN Curncy -> 2027-07-22"
+    - "CLSWIB1F BGN Curncy -> 2028-01-22"
+    - "CLSWIB2..IB10 BGN Curncy -> anual até 2036-07-22"
 
 sources:
   - "BanRep — Overnight Interbank Rate (IBR), glossário"

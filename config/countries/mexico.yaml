@@ -18,8 +18,23 @@ benchmark_transition:
   detail: "Banxico proibiu novas operações referenciadas à TIIE 28 dias; contratos legados permanecem, mas o benchmark vigente para novos trades é a TIIE de Fondeo (F-TIIE), com spread de +24bps sobre a taxa composta."
 
 bloomberg:
-  curve_family: "VERIFICAR — 'MPSW' não confirmado em fonte pública, checar no terminal"
-  confidence: baixa
+  curve_family: "MPSW — confirmado via inspect_bbg_tickers.py (MPSWFA...MPSWF10J Curncy)"
+  security_typ2: "FIXED_FLOAT_OIS — confirma a natureza OIS do F-TIIE"
+  maturity_source: "campo MATURITY direto (não precisa parsear o ticker)"
+  confidence: alta
+  tickers_confirmados_2026-07-20:
+    - "MPSWFA Curncy -> 2026-08-19"
+    - "MPSWFB Curncy -> 2026-09-16"
+    - "MPSWFC Curncy -> 2026-10-14"
+    - "MPSWFF Curncy -> 2027-01-06"
+    - "MPSWFI Curncy -> 2027-03-31"
+    - "MPSWF1A Curncy -> 2027-07-21"
+    - "MPSWF2B Curncy -> 2028-07-19"
+    - "MPSWF3C Curncy -> 2029-07-18"
+    - "MPSWF4D Curncy -> 2030-07-17"
+    - "MPSWF5E Curncy -> 2031-07-16"
+    - "MPSWF7G Curncy -> 2033-07-13"
+    - "MPSWF10J Curncy -> 2036-07-09"
 
 sources:
   - "BMV — Swap de TIIE de Fondeo y Conversión de Tasas"
@@ -28,3 +43,4 @@ sources:
 notes:
   - "Se o book tiver posições legadas em TIIE 28d (pré-2025), tratar como curva separada — não misturar com F-TIIE."
   - "coupon_frequency_months=1 é aproximação; o período real é de 28 dias corridos, não mensal — considerar gerar o schedule em dias corridos se a precisão de 28d vs ~30d importar para o book."
+  - "Espaçamento real dos pilares confirmado consistente com múltiplos de 28 dias até ~1Y (MPSWFA->FB->FC->FF->FI->F1A cada um 1-4x28 dias do anterior), depois anual (F2B, F3C, F4D, F5E) e ~2Y de salto pra F7G/F10J — reforça que 28d é a unidade certa, mas não confirma a frequência de PAGAMENTO de cada swap individualmente."
