@@ -1,5 +1,5 @@
 """Roda localmente (Bloomberg Terminal ativo): para cada país, monta a curva
-do dia a partir dos tickers da Inputs_BCs.xlsx e gera o relatório de
+do dia a partir dos tickers da Input_BCs.xlsx e gera o relatório de
 'quanto está precificado' por reunião do Banco Central.
 
 python scripts/run_daily_pricing.py

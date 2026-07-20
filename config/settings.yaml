@@ -4,7 +4,7 @@
 # "aba Dates com reuniões e feriados").
 
 paths:
-  inputs_bcs: "Data/Inputs_BCs.xlsx"
+  inputs_bcs: "Data/Input_BCs.xlsx"
   bbg_cache_dir: "Data/raw"
   processed_dir: "Data/processed"
 

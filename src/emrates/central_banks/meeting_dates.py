@@ -1,4 +1,4 @@
-"""Thin accessor over the meeting-date calendars loaded from Inputs_BCs.xlsx."""
+"""Thin accessor over the meeting-date calendars loaded from Input_BCs.xlsx."""
 from __future__ import annotations
 
 from datetime import date

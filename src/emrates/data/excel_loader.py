@@ -1,4 +1,4 @@
-"""Reads Inputs_BCs.xlsx (Tickers / Dates / Posições sheets).
+"""Reads Input_BCs.xlsx (Tickers / Dates / Posições sheets).
 
 The exact column names below are a best guess from the description given
 ("aba Tickers com Policy/curve por país", "aba Dates com reuniões e
@@ -30,7 +30,7 @@ class InputsBCsLoader:
         self.path = Path(path)
         if not self.path.exists():
             raise FileNotFoundError(
-                f"{self.path} not found — this loader must run locally where Inputs_BCs.xlsx lives, "
+                f"{self.path} not found — this loader must run locally where Input_BCs.xlsx lives, "
                 "not inside a cloud session"
             )
         self.column_map = column_map
@@ -70,7 +70,7 @@ class InputsBCsLoader:
 
     def load_positions(self) -> pd.DataFrame:
         """Reads the 'Posições' sheet — layout proposed in README.md, add it to
-        Inputs_BCs.xlsx before calling this. Expected columns (see column_map['positions']):
+        Input_BCs.xlsx before calling this. Expected columns (see column_map['positions']):
         TradeID, Country, TradeDate, StartDate, MaturityDate, PayReceive, Notional,
         FixedRate, Currency."""
         cols = self.column_map["positions"]

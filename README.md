@@ -13,11 +13,11 @@ Tcheca, Hungria.
 Este projeto foi montado num ambiente de nuvem, mas **precisa rodar na sua
 máquina** (VS Code local) porque depende de:
 - xbbg + Bloomberg Terminal/BBComm ativo (dados de mercado)
-- `Data/Inputs_BCs.xlsx`, seu arquivo local
+- `Data/Input_BCs.xlsx`, seu arquivo local
 
 Clone/copie este repositório para `C:\Users\RRZBCSH\Projects\meu-projeto\`
 — a pasta `Data/` do repo já bate com o caminho que você usa hoje, então o
-arquivo `Inputs_BCs.xlsx` que já existe aí não precisa mudar de lugar.
+arquivo `Input_BCs.xlsx` que já existe aí não precisa mudar de lugar.
 
 ## Setup
 
@@ -28,7 +28,7 @@ pip install -r requirements.txt
 
 ## Passo 0 — calibrar o leitor da planilha
 
-Eu não tenho acesso ao seu `Inputs_BCs.xlsx` real, então `excel_loader.py`
+Eu não tenho acesso ao seu `Input_BCs.xlsx` real, então `excel_loader.py`
 assume nomes de coluna (ver `config/settings.yaml`) que são um chute a
 partir da sua descrição. Rode:
 
@@ -42,7 +42,7 @@ e me mande o output (nomes de aba, colunas, primeiras linhas) — ajusto
 
 ## Passo 1 — aba "Posições" (ainda não existe na sua planilha)
 
-Adicione uma aba `Posições` em `Inputs_BCs.xlsx` com estas colunas
+Adicione uma aba `Posições` em `Input_BCs.xlsx` com estas colunas
 (nomes configuráveis em `config/settings.yaml` → `positions_columns` se
 preferir nomes diferentes):
 
