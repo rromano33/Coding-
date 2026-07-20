@@ -6,6 +6,7 @@ python scripts/run_daily_pricing.py
 """
 from __future__ import annotations
 
+import json
 import sys
 from datetime import date
 from pathlib import Path
@@ -137,6 +138,12 @@ def main() -> None:
         report = priced_bc_report(smoothed_curve, meetings, current_policy_rate)
         out_path = Path(settings["paths"]["processed_dir"]) / f"priced_bc_{country}_{valuation_date}.csv"
         report.to_csv(out_path, index=False)
+
+        # Sidecar with the raw policy rate — not in the priced_bc CSV itself,
+        # but build_dashboard.py wants it for the "taxa atual" header per country.
+        policy_path = Path(settings["paths"]["processed_dir"]) / f"policy_{country}_{valuation_date}.json"
+        policy_path.write_text(json.dumps({"policy_rate": current_policy_rate, "valuation_date": str(valuation_date)}))
+
         print(f"[{country}] {len(report)} reuniões precificadas -> {out_path}")
 
 
