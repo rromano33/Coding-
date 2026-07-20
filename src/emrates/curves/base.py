@@ -61,6 +61,14 @@ class DiscountCurve:
     def tau(self, start: date, end: date) -> float:
         return year_fraction(start, end, self.convention, self.calendar)
 
+    def _signed_tau(self, start: date, end: date) -> float:
+        """Like tau(), but allows end < start (returns a negative fraction) — needed
+        to interpolate/extrapolate for dates before a pillar's start, e.g. a rolled
+        curve valuing a swap that began before the new valuation date."""
+        if end >= start:
+            return self.tau(start, end)
+        return -self.tau(end, start)
+
     def discount_factor(self, d: date) -> float:
         if d == self.valuation_date:
             return 1.0
@@ -79,7 +87,15 @@ class DiscountCurve:
 
         if t0 == t1:
             return df1
-        frac = (d - t0).days / (t1 - t0).days
+        # Interpolate on the curve's own tau (business days for BUS/252, calendar
+        # days for ACT/360 etc.), not raw calendar days — for a BUS/252 curve,
+        # calendar-day interpolation drifts from the business-day tau used to
+        # annualize, and that drift gets amplified by the 1/tau exponent for
+        # short-dated points (weekends inside a short window are a big share of
+        # the interval), producing zero rates a full percentage point or more off.
+        tau_full = self._signed_tau(t0, t1)
+        tau_partial = self._signed_tau(t0, d)
+        frac = tau_partial / tau_full if tau_full else 0.0
         log_df = math.log(df0) + frac * (math.log(df1) - math.log(df0))
         return math.exp(log_df)
 
