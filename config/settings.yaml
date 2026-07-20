@@ -1,7 +1,5 @@
-# Caminhos e mapeamento de colunas. Rode scripts/inspect_inputs.py localmente
-# e ajuste os *_columns abaixo para bater com as colunas reais da planilha —
-# hoje são um chute a partir da descrição ("aba Tickers com Policy/curve",
-# "aba Dates com reuniões e feriados").
+# Caminhos e mapeamento de colunas — confirmado contra o Input_BCs.xlsx real
+# via scripts/inspect_inputs.py em 20/07/2026.
 
 paths:
   inputs_bcs: "Data/Input_BCs.xlsx"
@@ -15,17 +13,37 @@ sheets:
 
 tickers_columns:
   country: "Country"
-  kind: "Type"      # valores esperados: "Policy" | "Curve"
-  tenor: "Tenor"
+  kind: "Type"          # valores confirmados: "Policy" | "Curve"
+  description: "Description"
   ticker: "Ticker"
 
+# Aba 'Dates' é larga: uma coluna por comitê (reuniões) e uma por país
+# (feriados), cada uma uma lista independente de datas, não alinhada por
+# linha entre colunas.
 dates_columns:
-  country: "Country"
-  event_type: "EventType"  # valores esperados: "Meeting" | "Holiday"
-  date: "Date"
+  meetings:
+    BANXICO: mexico
+    BCCh: chile
+    Banrep: colombia
+    BCB: brazil
+    SARB: south_africa
+    NBP: poland
+    CNB: czech
+    MNB: hungary
+  holidays:
+    Feriados_mexico: mexico
+    Feriados_chile: chile
+    Feriados_Brazil: brazil
+    Feriados_ZAR: south_africa
+    Feriados_PLN: poland
+    Feriados_CZK: czech
+    Feriados_HUF: hungary
+    # Feriados da Colômbia: não encontrei essa coluna na planilha (só as 7
+    # acima apareceram) — confirmar com o Ricardo se existe com outro nome
+    # (ex: Feriados_COP) ou se falta adicionar.
 
 positions_columns:
-  # layout proposto para a nova aba "Posições" — ver README.md
+  # já existe na planilha com exatamente este layout (aba "Posições", vazia por ora)
   TradeID: "TradeID"
   Country: "Country"
   TradeDate: "TradeDate"

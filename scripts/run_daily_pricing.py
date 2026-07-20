@@ -18,9 +18,9 @@ from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.curves.base import Pillar
 from emrates.curves.factory import build_curve_builder, load_country_config
 from emrates.data.bbg_client import BbgClient
-from emrates.data.calendars import CalendarSet
+from emrates.data.calendars import Calendar, CalendarSet
 from emrates.data.excel_loader import InputsBCsLoader
-from emrates.conventions.schedule import tenor_to_date
+from emrates.data.ticker_parsing import MATURITY_PARSERS
 from emrates.data.curve_store import save_curve
 from emrates.reports.priced_bc import priced_bc_report
 
@@ -47,21 +47,34 @@ def main() -> None:
     Path(settings["paths"]["processed_dir"]).mkdir(parents=True, exist_ok=True)
 
     for country in COUNTRIES:
-        cfg = load_country_config(country)
-        calendar = calendars[country]
-        country_tickers = [t for t in tickers if t.country.strip().lower() == country]
+        # Country names in the sheet aren't confirmed to match our config keys
+        # 1:1 yet (only "Brazil" -> "brazil" is verified) — best-effort match
+        # for now via lowercase + underscore.
+        country_tickers = [t for t in tickers if t.country.strip().lower().replace(" ", "_") == country]
         policy_ticker = next((t for t in country_tickers if t.kind.lower() == "policy"), None)
         curve_tickers = [t for t in country_tickers if t.kind.lower() == "curve"]
         if policy_ticker is None or not curve_tickers:
-            print(f"[{country}] sem tickers Policy/Curve na planilha — pulei. Confirme a aba Tickers.")
+            print(f"[{country}] sem tickers Policy/Curve na planilha (ou nome do país não bate) — pulei.")
             continue
 
+        maturity_parser = MATURITY_PARSERS[country]
+        calendar = calendars.get(country) or Calendar(country, holidays=set())
+        if calendars.get(country) is None:
+            print(f"[{country}] sem coluna de feriados na aba Dates — usando calendário vazio (dias úteis = seg-sex).")
+
+        try:
+            pillars_maturities = [maturity_parser(t.ticker, calendar) for t in curve_tickers]
+        except NotImplementedError as exc:
+            print(f"[{country}] {exc}")
+            continue
+
+        cfg = load_country_config(country)
         prices = bbg.last_prices([policy_ticker.ticker] + [t.ticker for t in curve_tickers])
         current_policy_rate = prices[policy_ticker.ticker] / 100.0
 
         pillars = [
-            Pillar(maturity=tenor_to_date(valuation_date, t.tenor), rate=prices[t.ticker] / 100.0)
-            for t in curve_tickers
+            Pillar(maturity=maturity, rate=prices[t.ticker] / 100.0)
+            for t, maturity in zip(curve_tickers, pillars_maturities)
         ]
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
         save_curve(curve, settings["paths"]["processed_dir"], country)

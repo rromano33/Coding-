@@ -65,6 +65,9 @@ class CalendarSet:
                 f"no calendar loaded for '{country}' — check the 'Dates' sheet has a holiday column for it"
             ) from exc
 
+    def get(self, country: str, default: Calendar | None = None) -> Calendar | None:
+        return self._calendars.get(country, default)
+
     @classmethod
     def from_holiday_frame(cls, holidays_by_country: dict[str, list[date]]) -> "CalendarSet":
         return cls({country: Calendar(country, set(dates)) for country, dates in holidays_by_country.items()})

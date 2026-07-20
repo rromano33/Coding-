@@ -1,12 +1,20 @@
 """Reads Input_BCs.xlsx (Tickers / Dates / Posições sheets).
 
-The exact column names below are a best guess from the description given
-("aba Tickers com Policy/curve por país", "aba Dates com reuniões e
-feriados") and have NOT been validated against the real file yet — run
-scripts/inspect_inputs.py locally and adjust the `*_columns` mappings in
-config/settings.yaml to match what it prints before trusting this module.
-Everything here reads through that mapping rather than hardcoding column
-names, so fixing settings.yaml should be enough — no code changes.
+Layout confirmed against the real file via scripts/inspect_inputs.py:
+
+- 'Tickers': columns Ticker, Country, Description, Type (Policy|Curve).
+  There is no tenor column — the maturity is implied by the ticker itself
+  (e.g. Brazil's DI1 futures encode month+year in the ticker, see
+  emrates.data.ticker_parsing). How to turn a given country's curve
+  tickers into maturity dates is therefore country-specific code, not a
+  config value.
+
+- 'Dates': WIDE format, one column per committee for meeting dates
+  (BANXICO, BCCh, Banrep, BCB, SARB, NBP, CNB, MNB) and one column per
+  country for holidays (Feriados_<country>), each column an independent,
+  ragged list of dates (not row-aligned across columns). The mapping from
+  column name to our internal country key lives in
+  config/settings.yaml -> dates_columns.meetings / dates_columns.holidays.
 """
 from __future__ import annotations
 
@@ -21,7 +29,7 @@ import pandas as pd
 class TickerRef:
     country: str
     kind: str  # "Policy" or "Curve"
-    tenor: str | None
+    description: str
     ticker: str
 
 
@@ -44,33 +52,32 @@ class InputsBCsLoader:
                 TickerRef(
                     country=str(row[cols["country"]]).strip(),
                     kind=str(row[cols["kind"]]).strip(),
-                    tenor=(None if pd.isna(row.get(cols.get("tenor", ""))) else str(row[cols["tenor"]]).strip()),
+                    description=str(row[cols["description"]]).strip(),
                     ticker=str(row[cols["ticker"]]).strip(),
                 )
             )
         return refs
 
-    def load_meeting_dates(self) -> dict[str, list[date]]:
-        cols = self.column_map["dates"]
-        df = pd.read_excel(self.path, sheet_name=self.column_map.get("dates_sheet", "Dates"))
-        meetings = df[df[cols["event_type"]].str.lower() == "meeting"]
+    def _load_wide_date_columns(self, sheet: str, column_to_country: dict[str, str]) -> dict[str, list[date]]:
+        df = pd.read_excel(self.path, sheet_name=sheet)
         out: dict[str, list[date]] = {}
-        for country, group in meetings.groupby(cols["country"]):
-            out[str(country).strip()] = sorted(pd.to_datetime(group[cols["date"]]).dt.date.tolist())
+        for column, country in column_to_country.items():
+            if column not in df.columns:
+                continue
+            values = pd.to_datetime(df[column].dropna()).dt.date.tolist()
+            out[country] = sorted(values)
         return out
+
+    def load_meeting_dates(self) -> dict[str, list[date]]:
+        dates_sheet = self.column_map.get("dates_sheet", "Dates")
+        return self._load_wide_date_columns(dates_sheet, self.column_map["dates"]["meetings"])
 
     def load_holidays(self) -> dict[str, list[date]]:
-        cols = self.column_map["dates"]
-        df = pd.read_excel(self.path, sheet_name=self.column_map.get("dates_sheet", "Dates"))
-        holidays = df[df[cols["event_type"]].str.lower() == "holiday"]
-        out: dict[str, list[date]] = {}
-        for country, group in holidays.groupby(cols["country"]):
-            out[str(country).strip()] = sorted(pd.to_datetime(group[cols["date"]]).dt.date.tolist())
-        return out
+        dates_sheet = self.column_map.get("dates_sheet", "Dates")
+        return self._load_wide_date_columns(dates_sheet, self.column_map["dates"]["holidays"])
 
     def load_positions(self) -> pd.DataFrame:
-        """Reads the 'Posições' sheet — layout proposed in README.md, add it to
-        Input_BCs.xlsx before calling this. Expected columns (see column_map['positions']):
+        """Reads the 'Posições' sheet. Expected columns (see column_map['positions']):
         TradeID, Country, TradeDate, StartDate, MaturityDate, PayReceive, Notional,
         FixedRate, Currency."""
         cols = self.column_map["positions"]
