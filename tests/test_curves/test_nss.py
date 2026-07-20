@@ -1,8 +1,10 @@
 from datetime import date
 
+import pytest
+
 from emrates.conventions.compounding import Compounding
 from emrates.conventions.daycount import DayCount
-from emrates.curves.base import Pillar, ZeroRateCurveBuilder
+from emrates.curves.base import DiscountCurve, Pillar, ZeroRateCurveBuilder
 from emrates.curves.nss import fit_nss_curve
 from emrates.data.calendars import Calendar
 
@@ -66,3 +68,21 @@ def test_nss_reproduces_pillars_reasonably_well():
         smoothed_df = smoothed_curve.discount_factor(p.maturity)
         smoothed_zero = smoothed_df ** (-1 / tau) - 1
         assert abs(smoothed_zero - exact_zero) < 0.002  # within 20bps
+
+
+def test_fit_nss_curve_reports_which_pillar_is_bad():
+    """Regression: a NaN/zero/negative discount factor sneaking into a pillar
+    (bad ticker price, bad maturity) used to surface as scipy's opaque
+    'Residuals are not finite in the initial point.' — should name the pillar."""
+    calendar = Calendar("hungary", holidays=set())
+    valuation_date = date(2026, 7, 20)
+    bad_curve = DiscountCurve(
+        valuation_date,
+        [date(2027, 7, 22), date(2028, 7, 22)],
+        [0.97, float("nan")],
+        DayCount.ACT_360,
+        Compounding.EXPONENTIAL,
+        calendar,
+    )
+    with pytest.raises(ValueError, match="pilar"):
+        fit_nss_curve(bad_curve)

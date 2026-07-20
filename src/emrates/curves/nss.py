@@ -90,9 +90,20 @@ class NssCurve:
 
 def fit_nss_curve(curve) -> NssCurve:
     """Fits an NssCurve to an existing (exact) DiscountCurve's own pillars."""
-    t_values = [curve.tau(curve.valuation_date, d) for d in curve.pillar_dates]
-    zero_rates_cc = [
-        -math.log(df) / t if t > 0 else 0.0 for df, t in zip(curve.discount_factors, t_values)
-    ]
+    t_values, zero_rates_cc, bad = [], [], []
+    for d, df in zip(curve.pillar_dates, curve.discount_factors):
+        t = curve.tau(curve.valuation_date, d)
+        if t <= 0 or df is None or not math.isfinite(df) or df <= 0:
+            bad.append((d, df, t))
+            continue
+        t_values.append(t)
+        zero_rates_cc.append(-math.log(df) / t)
+
+    if bad:
+        raise ValueError(
+            "fit_nss_curve: pilar(es) inválido(s) (data, discount_factor, tau) antes de ajustar a curva: "
+            f"{bad} — confira se o preço/vencimento desses tickers veio correto da Bloomberg."
+        )
+
     params = fit_nss(t_values, zero_rates_cc)
     return NssCurve(curve.valuation_date, curve.convention, curve.calendar, params)
