@@ -94,13 +94,21 @@ def main() -> None:
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
 
         if fra_tickers:
-            descriptions = bbg.reference_fields([t.ticker for t in fra_tickers], ["SECURITY_DES"])
+            descriptions = bbg.reference_fields([t.ticker for t in fra_tickers], ["SECURITY_DES", "NAME"])
             fra_data = []
             for _, row in descriptions.iterrows():
-                try:
-                    period = parse_fra_period(row["SECURITY_DES"])
-                except ValueError as exc:
-                    print(f"[{country}] pulei {row['ticker']}: {exc}")
+                period = None
+                for field in ("SECURITY_DES", "NAME"):
+                    try:
+                        period = parse_fra_period(row[field])
+                        break
+                    except ValueError:
+                        continue
+                if period is None:
+                    print(
+                        f"[{country}] pulei {row['ticker']}: sem período NxM em "
+                        f"SECURITY_DES={row['SECURITY_DES']!r} nem NAME={row['NAME']!r}"
+                    )
                     continue
                 fra_data.append((*period, prices[row["ticker"]] / 100.0))
             spot_date = calendar.add_business_days(valuation_date, 2)
