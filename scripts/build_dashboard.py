@@ -217,9 +217,18 @@ def build_scenario_section_data(settings: dict, processed_dir: Path, country: st
     scenario_curves = {}
     scenario_labels = {}
     for path in scenario_files:
-        scenario = load_scenario(path)
-        scenario_curves[path.stem] = build_scenario_curve(curve, meetings, scenario)
-        scenario_labels[path.stem] = scenario.name
+        try:
+            scenario = load_scenario(path)
+            scenario_curves[path.stem] = build_scenario_curve(curve, meetings, scenario)
+            scenario_labels[path.stem] = scenario.name
+        except ValueError as exc:
+            # e.g. an exemplo_template.yaml whose placeholder meeting_date
+            # hasn't been edited yet — skip just this one file rather than
+            # crashing the whole dashboard build.
+            print(f"[{country}] pulei cenário {path.name}: {exc}")
+
+    if not scenario_curves:
+        return None
 
     meeting_df = meeting_comparison_table(curve, scenario_curves, meetings, current_policy_rate)
     year_df = hikes_cuts_by_year_table(meeting_df)
