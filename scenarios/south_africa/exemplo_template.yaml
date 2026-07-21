@@ -1,0 +1,18 @@
+# TEMPLATE — edite antes de rodar. Troque meeting_date pela data REAL da
+# reunião do SARB (veja a coluna "Reunião" no card do dashboard, ou a
+# 1a coluna de priced_bc_south_africa_<data>.csv em Data/processed/).
+#
+# shock_bps é ADICIONAL ao que o mercado já precifica naquela reunião:
+#   negativo = corta mais do que está precificado (mais dovish)
+#   positivo = sobe mais / corta menos do que está precificado (mais hawkish)
+# O choque PERSISTE: uma vez aplicado numa reunião, continua valendo nas
+# reuniões seguintes até que outro choque na lista o substitua.
+#
+# Rode com:
+#   python scripts/run_scenario.py scenarios/south_africa/exemplo_template.yaml
+
+name: "SARB — cenário exemplo (edite-me)"
+country: south_africa
+shocks:
+  - meeting_date: 2026-01-01   # <- TROQUE pela data real da reunião no seu dashboard
+    shock_bps: -25

@@ -59,12 +59,21 @@ class InputsBCsLoader:
         return refs
 
     def _load_wide_date_columns(self, sheet: str, column_to_country: dict[str, str]) -> dict[str, list[date]]:
+        """Matches config/settings.yaml's column names against the sheet's
+        actual header case-insensitively (and ignoring stray whitespace) —
+        the real 'Dates' sheet mixes casing across columns (e.g.
+        'Feriados_Brazil' vs 'Feriados_mexico'), and a silent exact-match
+        miss here doesn't error, it just leaves that country's calendar
+        empty (weekends-only), a wrong-answer-without-a-crash failure mode
+        worth avoiding."""
         df = pd.read_excel(self.path, sheet_name=sheet)
+        actual_by_normalized = {str(c).strip().lower(): c for c in df.columns}
         out: dict[str, list[date]] = {}
         for column, country in column_to_country.items():
-            if column not in df.columns:
+            actual_column = actual_by_normalized.get(column.strip().lower())
+            if actual_column is None:
                 continue
-            values = pd.to_datetime(df[column].dropna()).dt.date.tolist()
+            values = pd.to_datetime(df[actual_column].dropna()).dt.date.tolist()
             out[country] = sorted(values)
         return out
 

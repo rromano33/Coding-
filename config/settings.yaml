@@ -30,17 +30,20 @@ dates_columns:
     NBP: poland
     CNB: czech
     MNB: hungary
+  # Nomes confirmados contra o print de 21/07/2026 (aba Dates, colunas I-P).
+  # O casing é inconsistente entre colunas na planilha real (Feriados_Brazil
+  # com B maiúsculo, as demais minúsculas) — o loader casa por nome
+  # ignorando maiúsculas/minúsculas (ver excel_loader.py), então isso aqui
+  # não precisa bater char-a-char, só o nome em si.
   holidays:
     Feriados_mexico: mexico
     Feriados_chile: chile
+    Feriados_Banrep: colombia
     Feriados_Brazil: brazil
-    Feriados_ZAR: south_africa
-    Feriados_PLN: poland
-    Feriados_CZK: czech
-    Feriados_HUF: hungary
-    # Feriados da Colômbia: não encontrei essa coluna na planilha (só as 7
-    # acima apareceram) — confirmar com o Ricardo se existe com outro nome
-    # (ex: Feriados_COP) ou se falta adicionar.
+    Feriados_south_africa: south_africa
+    Feriados_poland: poland
+    Feriados_czech: czech
+    Feriados_hungary: hungary
 
 positions_columns:
   # já existe na planilha com exatamente este layout (aba "Posições", vazia por ora)
