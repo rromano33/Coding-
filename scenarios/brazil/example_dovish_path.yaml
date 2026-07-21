@@ -1,0 +1,14 @@
+# Segundo exemplo — corte mais do que o mercado espera a partir de duas
+# reuniões seguidas (mostra o choque persistindo/acumulando: -20 na 1a,
+# depois mais -15 na 2a -> -35bps dali em diante).
+#
+# Rode com:
+#   python scripts/run_scenario.py scenarios/brazil/example_dovish_path.yaml
+
+name: "Copom mais dovish a partir de ago/26"
+country: brazil
+shocks:
+  - meeting_date: 2026-08-06
+    shock_bps: -20
+  - meeting_date: 2026-09-17
+    shock_bps: -15

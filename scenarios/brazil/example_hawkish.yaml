@@ -1,0 +1,20 @@
+# Cenário de exemplo — Copom mais duro do que o mercado precifica.
+#
+# meeting_date tem que ser uma das datas que aparecem na coluna "Reunião" do
+# card do Brasil no dashboard (ou na 1a coluna do priced_bc_brazil_*.csv) —
+# essas abaixo são as datas reais vistas no seu último dashboard.
+#
+# shock_bps é ADICIONAL ao que o mercado já precifica naquela reunião:
+#   negativo = corta mais do que está precificado (mais dovish)
+#   positivo = sobe mais / corta menos do que está precificado (mais hawkish)
+# O choque PERSISTE: uma vez aplicado numa reunião, ele continua valendo nas
+# reuniões seguintes até que outro choque na lista o substitua.
+#
+# Rode com:
+#   python scripts/run_scenario.py scenarios/brazil/example_hawkish.yaml
+
+name: "Copom hawkish surpresa em set/26"
+country: brazil
+shocks:
+  - meeting_date: 2026-09-17
+    shock_bps: 30 # Copom surpreende subindo (ou cortando bem menos) 30bps a mais do que precificado
