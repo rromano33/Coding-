@@ -8,7 +8,8 @@ floating_index: "BUBOR 6M"
 index_type: term_rate
 
 pillar_type: par_swap
-day_count: ACT/360                 # perna BUBOR; BIRS (taxa fixa) cotado em ACT/365 — VERIFICAR se o motor precisa de day count distinto por perna
+day_count: ACT/360                 # CONFIRMADO 21/07/2026 — BUBOR (perna flutuante) é ACT/360; BIRS (fixação/perna fixa) é ACT/365,
+                                    # diferente (mesma limitação de single day_count por curva que Polônia, ver country config lá)
 compounding: exponential
 coupon_frequency_months: 6         # flutuante semestral; fixa anual
 fixing_lag_days: 2                 # spot lag T-2, fixing às 11h
@@ -31,6 +32,7 @@ sources:
   - "MNB — BIRS Regulation"
   - "MNB — BUBOR Regulation"
   - "MNB — administrador de BUBOR/BIRS/HUFONIA desde nov/2016"
+  - "MNB — Regulation on the fixing procedure of the Budapest Interest Rate Swap (BIRS): confirma ACT/360 na perna BUBOR, ACT/365 na BIRS"
 
 notes:
   - "Particularidade: BUBOR (perna flutuante) e BIRS (fixação/perna fixa do swap) usam day counts diferentes (ACT/360 vs ACT/365) — o motor genérico hoje assume um único day_count por curva; se isso importar para o book, tratar como refinamento futuro."

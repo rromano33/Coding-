@@ -31,6 +31,7 @@ sources:
   - "ČNB — PRIBOR"
   - "ČNB — CZEONIA"
   - "Czech Financial Benchmark Facility — Benchmark Statement PRIBOR"
+  - "day_count ACT/360 reconfirmado 21/07/2026 (cbonds IRS CZK Act/360 Ann vs 6M PRIBOR; TP ICAP IRP Template CZK IRS)"
 
 notes:
   - "Tenores 2M e 9M do PRIBOR foram descontinuados (abr/2025) por baixa representatividade — sem impacto no tenor de referência 6M usado aqui."

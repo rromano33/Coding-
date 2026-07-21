@@ -14,15 +14,16 @@ floating_index: "ZARONIA (South African Rand Overnight Index Average)"
 index_type: overnight_compounded
 
 pillar_type: zero_rate              # bullet — mesma incerteza de Chile/Colômbia para tenores longos (só 10Y confirmado, sem doc de frequência de cupom)
-day_count: ACT/365                  # herdado da convenção JIBAR anterior — VERIFICAR se ZARONIA usa a mesma
+day_count: ACT/365                  # CONFIRMADO 21/07/2026 — SARB "Market conventions for ZARONIA" e o contrato ZARONIA-OIS-Compound
+                                     # publicado no Bloomberg SEF: ZARONIA é cotado/composto em ACT/365. Coincide com o herdado do JIBAR.
 compounding: exponential
 coupon_frequency_months: null
-fixing_lag_days: 0                  # VERIFICAR — não pesquisado especificamente para ZARONIA ainda
+fixing_lag_days: 0                  # ainda VERIFICAR — pesquisa confirmou day_count, mas não achei o fixing lag específico de ZARONIA
 
 benchmark_transition:
   status: "em andamento — confirmado, com cronograma"
   detail: "SARB anunciou em 03/dez/2025 a cessação definitiva de todos os tenores do JIBAR após a última publicação em 31/12/2026, substituído por ZARONIA (overnight RFR). Os tickers da planilha do usuário já parecem ser a curva ZARONIA (SAOIAA, FIXED_FLOAT_OIS), não JIBAR — ou seja, a transição já está refletida no book."
-  action_item: "Confirmar com a mesa se SAOIAA é mesmo ZARONIA; se sim, pesquisar day_count/fixing_lag específicos de ZARONIA (day_count ACT/365 aqui é herdado do JIBAR, não confirmado para ZARONIA)."
+  action_item: "day_count confirmado (ACT/365, ver acima). Ainda falta confirmar com a mesa se SAOIAA é mesmo ZARONIA e o fixing lag específico."
 
 bloomberg:
   curve_family: "SAOIAA — confirmado via inspect_bbg_tickers.py (SAOIAAA...SAOIAA10 BGN Curncy)"
@@ -39,6 +40,8 @@ sources:
   - "SARB — JIBAR"
   - "SARB MPG — Transition Approach Recommendations 2026"
   - "ISDA — JIBAR Cessation Guidance (dez/2025)"
+  - "SARB — Market conventions for ZARONIA-linked loans (working draft): ZARONIA cotado em ACT/365"
+  - "Bloomberg SEF — ZAR ZARONIA-OIS-Compound Fixed-to-Floating IRS contract (mar/2025)"
 
 notes:
   - "Pesquisa original (JIBAR 3M, par_swap, NACQ) fica registrada abaixo caso o book use JIBAR legado em paralelo à curva ZARONIA:"

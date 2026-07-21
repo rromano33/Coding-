@@ -8,7 +8,7 @@ floating_index: "TIIE de Fondeo a un Día"
 index_type: overnight_compounded   # composição diária + spread de ajuste de 24bps vs a antiga TIIE 28d
 
 pillar_type: par_swap              # cupom periódico a cada 28 dias corridos
-day_count: ACT/360                 # VERIFICAR — uso corrente de mercado, não confirmado em doc primário
+day_count: ACT/360                 # CONFIRMADO 21/07/2026 — CME/CFTC F-TIIE OIS filings: ambas as pernas em ACT/360 (ver sources)
 compounding: exponential
 coupon_frequency_months: 1         # aproximação mensal do período de 28 dias — VERIFICAR e ajustar p/ dias corridos se necessário
 fixing_lag_days: 0                 # TIIE de Fondeo de D é publicada por Banxico às 17h do próprio dia D
@@ -39,6 +39,8 @@ bloomberg:
 sources:
   - "BMV — Swap de TIIE de Fondeo y Conversión de Tasas"
   - "Banxico — TIIE de Fondeo a Un Día Hábil Bancario"
+  - "CFTC filing — Mexican MXN/F-TIIE Overnight Index Swap (ambas pernas ACT/360)"
+  - "CME Group — F-TIIE OIS clearing (fev/2024), ACT/360"
 
 notes:
   - "Se o book tiver posições legadas em TIIE 28d (pré-2025), tratar como curva separada — não misturar com F-TIIE."

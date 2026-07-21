@@ -8,9 +8,12 @@ floating_index: "WIBOR 6M"
 index_type: term_rate
 
 pillar_type: par_swap
-day_count: ACT/365F                # perna WIBOR; perna fixa cotada em ACT/ACT anual — VERIFICAR se precisamos separar day count por perna
+day_count: ACT/365F                # CONFIRMADO 21/07/2026 — perna WIBOR (flutuante) é ACT/365.FIXED (ver sources). Perna fixa é ACT/ACT
+                                    # anual, diferente — o motor só suporta um day_count por curva (ver nota abaixo), usamos o da perna
+                                    # flutuante porque é o lado que a curva efetivamente representa (o índice sendo descontado).
 compounding: exponential
-coupon_frequency_months: 6         # flutuante semestral; fixa é anual — VERIFICAR se o motor precisa de frequências distintas por perna
+coupon_frequency_months: 6         # flutuante semestral; fixa é anual (mesma limitação de single day_count acima, sem impacto grande:
+                                    # cupom fixo anual só entra no bootstrap, não na curva de desconto em si)
 fixing_lag_days: 2                 # spot lag T-2 (Varsóvia), padrão IBOR 2006 ISDA
 
 benchmark_transition:
@@ -42,6 +45,8 @@ sources:
   - "GPW Benchmark"
   - "KNF — Recommendation on POLSTR index"
   - "OSTTRA — POLSTR MarkitWire"
+  - "cbonds — IRS PLN Act/Act Ann vs 6M WIBOR (confirma ACT/365F na perna WIBOR, ACT/ACT na perna fixa)"
+  - "TP ICAP IRP MET Template PLN Interest Rate Swap"
 
 notes:
   - "País com maior risco de mudança de convenção no curto prazo entre os 8 — revisar este arquivo com prioridade antes de qualquer entrega em produção."

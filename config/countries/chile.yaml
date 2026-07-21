@@ -33,6 +33,7 @@ bloomberg:
 sources:
   - "BCCh — Reglamento ICP/ICP Real (CBF)"
   - "BCCh — Estudio N°56, Swap de Tasas Promedio Cámara y Seguro Inflación"
+  - "day_count ACT/360 reconfirmado 21/07/2026 (BCCh working paper + LatAmSEF product certification)"
 
 notes:
   - "VERIFICAR: para swaps SPC acima de 18 meses as fontes sugerem pagamento periódico (possivelmente semestral), não bullet — se o book tiver posições >18m, mudar pillar_type para par_swap e confirmar a frequência antes de confiar no PnL."

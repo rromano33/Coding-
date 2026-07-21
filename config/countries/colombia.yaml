@@ -32,6 +32,7 @@ bloomberg:
 sources:
   - "BanRep — Overnight Interbank Rate (IBR), glossário"
   - "BanRep — Manual de uso del IBR"
+  - "day_count revisado 21/07/2026: COP-IBR-OIS-COMPOUND permite ACT/360 OU ACT/365F por contrato (não há um único padrão universal) — ACT/360 é descrito como o mais comum, mantido aqui, mas com confiança menor que Chile/Czech/Mexico."
 
 notes:
   - "Particularidade de fixing: a taxa IBR publicada no dia D é para vigência em D+1 — atenção ao alinhar isso no motor de acumulação (calendars.py / bootstrap), diferente de Brasil/Chile onde a taxa do dia vale para o próprio dia."
