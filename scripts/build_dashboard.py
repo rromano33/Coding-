@@ -21,7 +21,16 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from emrates.central_banks.meeting_dates import upcoming_meetings
+from emrates.data.calendars import CalendarSet
+from emrates.data.curve_store import load_curve
+from emrates.data.excel_loader import InputsBCsLoader
 from emrates.reports.colors import BLUE_DARK, BLUE_LIGHT, GRAY_DARK, GRAY_LIGHT, RED_DARK, RED_LIGHT, diverging_color
+from emrates.scenarios.comparison import hikes_cuts_by_year_table, meeting_comparison_table, vertex_comparison_table
+from emrates.scenarios.curve import build_scenario_curve
+from emrates.scenarios.model import load_scenario
+
+SCENARIOS_DIR = Path("scenarios")
 
 # Order matters for layout: LatAm fills row 1 (4 cols), CEMEA fills row 2,
 # with south_africa placed last so it lands in the same column as colombia
@@ -156,6 +165,133 @@ def render_country_card(c: dict, domain: float) -> str:
     </section>"""
 
 
+def _latest_curve_path(processed_dir: Path, country: str) -> Path | None:
+    candidates = sorted(processed_dir.glob(f"curve_{country}_*.json"))
+    return candidates[-1] if candidates else None
+
+
+def _load_input_sources(settings: dict):
+    """Loads Input_BCs.xlsx (meeting dates + holiday calendars) once, shared
+    across every country's scenario section. Returns (meetings_by_country,
+    calendars), or None if the file isn't available here — the scenario
+    section is skipped in that case, base dashboard still renders."""
+    column_map = {
+        "dates": settings["dates_columns"],
+        "dates_sheet": settings["sheets"]["dates_sheet"],
+        "tickers": settings["tickers_columns"],
+        "tickers_sheet": settings["sheets"]["tickers_sheet"],
+        "positions": settings["positions_columns"],
+        "positions_sheet": settings["sheets"]["positions_sheet"],
+    }
+    try:
+        loader = InputsBCsLoader(settings["paths"]["inputs_bcs"], column_map)
+        meetings_by_country = loader.load_meeting_dates()
+        calendars = CalendarSet.from_holiday_frame(loader.load_holidays())
+    except FileNotFoundError:
+        return None
+    return meetings_by_country, calendars
+
+
+def build_scenario_section_data(settings: dict, processed_dir: Path, country: str, country_label: str) -> dict | None:
+    scenario_files = sorted((SCENARIOS_DIR / country).glob("*.yaml")) if (SCENARIOS_DIR / country).is_dir() else []
+    if not scenario_files:
+        return None
+
+    curve_path = _latest_curve_path(processed_dir, country)
+    if curve_path is None:
+        return None
+
+    sources = _load_input_sources(settings)
+    if sources is None:
+        return None
+    meetings_by_country, calendars = sources
+
+    curve = load_curve(curve_path, calendars.get(country))
+    horizon = settings["reporting"]["meetings_horizon"]
+    meetings = upcoming_meetings(meetings_by_country.get(country, []), curve.valuation_date, horizon + 1)
+    if len(meetings) < 2:
+        return None
+
+    current_policy_rate = load_policy_rate(processed_dir, country, curve.valuation_date) or 0.0
+
+    scenario_curves = {}
+    scenario_labels = {}
+    for path in scenario_files:
+        scenario = load_scenario(path)
+        scenario_curves[path.stem] = build_scenario_curve(curve, meetings, scenario)
+        scenario_labels[path.stem] = scenario.name
+
+    meeting_df = meeting_comparison_table(curve, scenario_curves, meetings, current_policy_rate)
+    year_df = hikes_cuts_by_year_table(meeting_df)
+    vertex_df = vertex_comparison_table(curve, scenario_curves)
+
+    return {
+        "label": country_label,
+        "scenario_labels": scenario_labels,
+        "meeting_df": meeting_df,
+        "year_df": year_df,
+        "vertex_df": vertex_df,
+    }
+
+
+def render_scenario_section(data: dict) -> str:
+    slugs = list(data["scenario_labels"])
+    header_cells = "".join(
+        f'<th class="num" title="{data["scenario_labels"][s]}">{s}</th>' for s in slugs
+    )
+
+    max_abs_meeting = max((abs(v) for s in slugs for v in data["meeting_df"][s]), default=1.0)
+    domain_meeting = max(15.0, max_abs_meeting)
+    meeting_rows = []
+    for _, row in data["meeting_df"].iterrows():
+        cells = "".join(_heat_td(row[s], domain_meeting) for s in slugs)
+        meeting_rows.append(f'<tr><td class="ink-secondary">{row["meeting_date"]}</td><td class="num">{fmt_bps(row["mkt"])}</td>{cells}</tr>')
+
+    max_abs_year = max((abs(v) for s in slugs for v in data["year_df"][s]), default=1.0)
+    domain_year = max(15.0, max_abs_year)
+    year_rows = []
+    for _, row in data["year_df"].iterrows():
+        cells = "".join(_heat_td(row[s], domain_year) for s in slugs)
+        year_rows.append(f'<tr><td class="ink-secondary">{int(row["year"])}</td><td class="num">{fmt_bps(row["mkt"])}</td>{cells}</tr>')
+
+    max_abs_vertex = max((abs(row[f"{s}_delta_bps"]) for _, row in data["vertex_df"].iterrows() for s in slugs), default=1.0)
+    domain_vertex = max(5.0, max_abs_vertex)
+    vertex_rows = []
+    for _, row in data["vertex_df"].iterrows():
+        cells = "".join(_heat_td(row[f"{s}_delta_bps"], domain_vertex) for s in slugs)
+        vertex_rows.append(f'<tr><td class="ink-secondary">{row["maturity"]}</td><td class="num">{row["mkt_pct"]:.3f}%</td>{cells}</tr>')
+
+    return f"""
+    <section class="scenario-section">
+      <h3>{data['label']} — cenários</h3>
+      <p class="scenario-note">Colunas: mkt (precificado hoje) + cada cenário em scenarios/&lt;país&gt;/*.yaml (passe o mouse no cabeçalho pro nome completo).</p>
+
+      <h4>Bps por reunião</h4>
+      <div class="panel"><table class="compare">
+        <thead><tr><th>Reunião</th><th class="num">mkt</th>{header_cells}</tr></thead>
+        <tbody>{"".join(meeting_rows)}</tbody>
+      </table></div>
+
+      <h4>Hikes/cuts por ano</h4>
+      <div class="panel"><table class="compare">
+        <thead><tr><th>Ano</th><th class="num">mkt</th>{header_cells}</tr></thead>
+        <tbody>{"".join(year_rows)}</tbody>
+      </table></div>
+
+      <h4>Impacto por vértice (Δ bps vs. mkt)</h4>
+      <div class="panel"><table class="compare">
+        <thead><tr><th>Vencimento</th><th class="num">mkt</th>{header_cells}</tr></thead>
+        <tbody>{"".join(vertex_rows)}</tbody>
+      </table></div>
+    </section>"""
+
+
+def _heat_td(value: float, domain: float) -> str:
+    color_light = diverging_color(value, domain, RED_LIGHT, GRAY_LIGHT, BLUE_LIGHT)
+    color_dark = diverging_color(value, domain, RED_DARK, GRAY_DARK, BLUE_DARK)
+    return f'<td class="heat-cell" style="--cell-light:{color_light};--cell-dark:{color_dark}">{fmt_bps(value)}</td>'
+
+
 def main() -> None:
     settings = yaml.safe_load(open("config/settings.yaml", encoding="utf-8"))
     processed_dir = Path(settings["paths"]["processed_dir"])
@@ -171,6 +307,14 @@ def main() -> None:
     if not countries_data:
         print("Nenhum país com dado salvo — rode run_daily_pricing.py primeiro.")
         return
+
+    scenario_sections_html = []
+    for c in countries_data:
+        section_data = build_scenario_section_data(settings, processed_dir, c["country"], c["label"])
+        if section_data is not None:
+            scenario_sections_html.append(render_scenario_section(section_data))
+    if not scenario_sections_html:
+        print("Nenhum cenário em scenarios/<país>/*.yaml (ou Input_BCs.xlsx indisponível) — seção de cenários pulada.")
 
     # Two separate domains: the heatmap shows the per-meeting change (small,
     # typically single digits to ~20bps), the cards' mini-bar/Acumulado
@@ -291,6 +435,19 @@ def main() -> None:
     margin-bottom: 2px; overflow: hidden; }}
   .mini-bar {{ position: absolute; top: 0; height: 100%; border-radius: 4px; }}
   .mini-bar-value {{ font-size: 11px; color: var(--ink-secondary); }}
+  .scenario-section {{ margin-top: 40px; }}
+  .scenario-section h3 {{ font-size: 17px; margin: 0 0 4px; }}
+  .scenario-note {{ font-size: 12px; color: var(--ink-muted); margin: 0 0 16px; }}
+  .scenario-section h4 {{ font-size: 12px; color: var(--ink-muted); font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.02em; margin: 20px 0 8px; }}
+  .panel {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px; overflow-x: auto; margin-bottom: 8px; }}
+  table.compare {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
+  table.compare th, table.compare td {{ padding: 6px 10px; text-align: right; white-space: nowrap;
+    font-variant-numeric: tabular-nums; }}
+  table.compare th:first-child, table.compare td:first-child {{ text-align: left; }}
+  table.compare th {{ color: var(--ink-muted); font-weight: 500; font-size: 11px; border-bottom: 1px solid var(--gridline); }}
+  table.compare td {{ border-bottom: 1px solid var(--gridline); }}
   footer {{ margin-top: 32px; font-size: 11px; color: var(--ink-muted); }}
 </style>
 </head>
@@ -315,6 +472,8 @@ def main() -> None:
   <div class="grid">
     {cards_html}
   </div>
+
+  {''.join(scenario_sections_html)}
 
   <footer>
     Mapa de calor: bps precificados NAQUELA reunião (implied_change_bps) — não é acumulado.
