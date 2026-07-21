@@ -30,11 +30,21 @@ export interface Trade {
   thesis: string | null;
   notes: string | null;
   emotions: string | null;
+  conviction: Conviction | null;
   pnl: number | null;
   r_multiple: number | null;
   created_at: string;
   updated_at: string;
 }
+
+export type Conviction = "baixa" | "media" | "alta" | "extrema";
+
+export const CONVICTIONS: { value: Conviction; label: string }[] = [
+  { value: "baixa", label: "Baixa (exploratório)" },
+  { value: "media", label: "Média (padrão)" },
+  { value: "alta", label: "Alta (convicção)" },
+  { value: "extrema", label: "Extrema (raro)" },
+];
 
 export type TradeInput = Omit<Trade, "id" | "pnl" | "r_multiple" | "created_at" | "updated_at">;
 
@@ -96,4 +106,99 @@ export interface User {
   email: string;
   display_name: string | null;
   created_at: string;
+}
+
+// ---- Risk settings ----
+
+export interface RiskSettings {
+  capital_alocado: number;
+  budget_anual_pnl: number;
+  sharpe_meta: number;
+  stop_loss_anual: number;
+  stop_loss_mensal: number;
+  stop_loss_diario: number;
+  risco_max_tese: number;
+  risco_max_classe: number;
+  max_trades_simultaneos: number;
+  max_teses_simultaneas: number;
+  behavioral_rules: string[];
+  vol_anual: number;
+  vol_diaria: number;
+  updated_at: string;
+}
+
+export type RiskSettingsInput = Partial<Omit<RiskSettings, "vol_anual" | "vol_diaria" | "updated_at">>;
+
+export interface ConvictionTier {
+  id: number;
+  label: string;
+  pct_of_stop_anual: number;
+  notes: string | null;
+  order_index: number;
+  risco_maximo: number;
+}
+
+export type ConvictionTierInput = Omit<ConvictionTier, "id" | "risco_maximo">;
+
+export interface StopLayer {
+  id: number;
+  level: string;
+  alerta_amarelo: number;
+  stop_duro: number;
+  motivo: string | null;
+  order_index: number;
+}
+
+export type StopLayerInput = Omit<StopLayer, "id">;
+
+export interface DrawdownPhase {
+  id: number;
+  pnl_min: number;
+  pnl_max: number | null;
+  drawdown_max_pct: number;
+  floor_minimo: number;
+  order_index: number;
+}
+
+export type DrawdownPhaseInput = Omit<DrawdownPhase, "id">;
+
+export interface SeasonalPosture {
+  id: number;
+  periodo: string;
+  situacao_pnl: string;
+  postura: string;
+  order_index: number;
+}
+
+export type SeasonalPostureInput = Omit<SeasonalPosture, "id">;
+
+export interface RiskAlert {
+  severity: "alerta" | "stop";
+  message: string;
+}
+
+export interface ConcentrationItem {
+  key: string;
+  risco_atual: number;
+  limite: number;
+  over: boolean;
+}
+
+export interface RiskStatus {
+  pnl_today: number;
+  pnl_month: number;
+  pnl_year: number;
+  budget_anual_pnl: number;
+  pct_of_budget_year: number | null;
+  drawdown_atual: number;
+  drawdown_permitido: number | null;
+  drawdown_floor_minimo: number | null;
+  drawdown_phase_label: string | null;
+  trades_abertos: number;
+  max_trades_simultaneos: number;
+  teses_abertas: number;
+  max_teses_simultaneas: number;
+  concentracao_tese: ConcentrationItem[];
+  concentracao_classe: ConcentrationItem[];
+  alerts: RiskAlert[];
 }

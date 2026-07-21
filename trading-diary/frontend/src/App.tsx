@@ -10,6 +10,8 @@ import TradeDetailPage from "./pages/TradeDetailPage";
 import PerformancePage from "./pages/PerformancePage";
 import MarketNotesPage from "./pages/MarketNotesPage";
 import JournalPage from "./pages/JournalPage";
+import RiskStatusPage from "./pages/RiskStatusPage";
+import RiskSettingsPage from "./pages/RiskSettingsPage";
 
 export default function App() {
   return (
@@ -27,6 +29,8 @@ export default function App() {
               <Route path="/performance" element={<PerformancePage />} />
               <Route path="/mercado" element={<MarketNotesPage />} />
               <Route path="/diario" element={<JournalPage />} />
+              <Route path="/risco" element={<RiskStatusPage />} />
+              <Route path="/risco/opcoes" element={<RiskSettingsPage />} />
             </Route>
           </Route>
         </Routes>

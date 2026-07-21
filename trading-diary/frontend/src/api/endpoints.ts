@@ -1,12 +1,23 @@
 import { api, setToken } from "./client";
 import type {
   BreakdownItem,
+  ConvictionTier,
+  ConvictionTierInput,
+  DrawdownPhase,
+  DrawdownPhaseInput,
   EquityCurvePoint,
   JournalEntry,
   JournalEntryInput,
   MarketNote,
   MarketNoteInput,
   PerformanceSummary,
+  RiskSettings,
+  RiskSettingsInput,
+  RiskStatus,
+  SeasonalPosture,
+  SeasonalPostureInput,
+  StopLayer,
+  StopLayerInput,
   Trade,
   TradeInput,
   User,
@@ -58,4 +69,24 @@ export const statsApi = {
   byStrategy: () => api.get<BreakdownItem[]>("/stats/by-strategy"),
   byAsset: () => api.get<BreakdownItem[]>("/stats/by-asset"),
   byMarket: () => api.get<BreakdownItem[]>("/stats/by-market"),
+};
+
+export const riskSettingsApi = {
+  get: () => api.get<RiskSettings>("/risk-settings"),
+  update: (payload: RiskSettingsInput) => api.put<RiskSettings>("/risk-settings", payload),
+  listConvictionTiers: () => api.get<ConvictionTier[]>("/risk-settings/conviction-tiers"),
+  replaceConvictionTiers: (items: ConvictionTierInput[]) =>
+    api.put<ConvictionTier[]>("/risk-settings/conviction-tiers", items),
+  listStopLayers: () => api.get<StopLayer[]>("/risk-settings/stop-layers"),
+  replaceStopLayers: (items: StopLayerInput[]) => api.put<StopLayer[]>("/risk-settings/stop-layers", items),
+  listDrawdownPhases: () => api.get<DrawdownPhase[]>("/risk-settings/drawdown-phases"),
+  replaceDrawdownPhases: (items: DrawdownPhaseInput[]) =>
+    api.put<DrawdownPhase[]>("/risk-settings/drawdown-phases", items),
+  listSeasonalPostures: () => api.get<SeasonalPosture[]>("/risk-settings/seasonal-postures"),
+  replaceSeasonalPostures: (items: SeasonalPostureInput[]) =>
+    api.put<SeasonalPosture[]>("/risk-settings/seasonal-postures", items),
+};
+
+export const riskApi = {
+  status: () => api.get<RiskStatus>("/risk/status"),
 };

@@ -50,6 +50,7 @@ class TradeBase(BaseModel):
     thesis: str | None = None
     notes: str | None = None
     emotions: str | None = None
+    conviction: str | None = None  # baixa | media | alta | extrema
 
 
 class TradeCreate(TradeBase):
@@ -74,6 +75,7 @@ class TradeUpdate(BaseModel):
     thesis: str | None = None
     notes: str | None = None
     emotions: str | None = None
+    conviction: str | None = None
 
 
 class TradeRead(TradeBase):
@@ -171,3 +173,133 @@ class BreakdownItem(BaseModel):
     trade_count: int
     total_pnl: float
     win_rate: float | None
+
+
+# ---- Risk settings ----
+
+class RiskSettingsBase(BaseModel):
+    capital_alocado: float
+    budget_anual_pnl: float
+    sharpe_meta: float
+    stop_loss_anual: float
+    stop_loss_mensal: float
+    stop_loss_diario: float
+    risco_max_tese: float
+    risco_max_classe: float
+    max_trades_simultaneos: int
+    max_teses_simultaneas: int
+    behavioral_rules: list[str] = []
+
+
+class RiskSettingsUpdate(BaseModel):
+    capital_alocado: float | None = None
+    budget_anual_pnl: float | None = None
+    sharpe_meta: float | None = None
+    stop_loss_anual: float | None = None
+    stop_loss_mensal: float | None = None
+    stop_loss_diario: float | None = None
+    risco_max_tese: float | None = None
+    risco_max_classe: float | None = None
+    max_trades_simultaneos: int | None = None
+    max_teses_simultaneas: int | None = None
+    behavioral_rules: list[str] | None = None
+
+
+class RiskSettingsRead(RiskSettingsBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    vol_anual: float
+    vol_diaria: float
+    updated_at: datetime.datetime
+
+
+class ConvictionTierItem(BaseModel):
+    label: str
+    pct_of_stop_anual: float
+    notes: str | None = None
+    order_index: int = 0
+
+
+class ConvictionTierRead(ConvictionTierItem):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    risco_maximo: float
+
+
+class StopLayerItem(BaseModel):
+    level: str
+    alerta_amarelo: float
+    stop_duro: float
+    motivo: str | None = None
+    order_index: int = 0
+
+
+class StopLayerRead(StopLayerItem):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class DrawdownPhaseItem(BaseModel):
+    pnl_min: float
+    pnl_max: float | None = None
+    drawdown_max_pct: float
+    floor_minimo: float
+    order_index: int = 0
+
+
+class DrawdownPhaseRead(DrawdownPhaseItem):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class SeasonalPostureItem(BaseModel):
+    periodo: str
+    situacao_pnl: str
+    postura: str
+    order_index: int = 0
+
+
+class SeasonalPostureRead(SeasonalPostureItem):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+# ---- Risk status (calculado) ----
+
+class RiskAlert(BaseModel):
+    severity: str  # "alerta" | "stop"
+    message: str
+
+
+class ConcentrationItem(BaseModel):
+    key: str
+    risco_atual: float
+    limite: float
+    over: bool
+
+
+class RiskStatus(BaseModel):
+    pnl_today: float
+    pnl_month: float
+    pnl_year: float
+    budget_anual_pnl: float
+    pct_of_budget_year: float | None
+
+    drawdown_atual: float
+    drawdown_permitido: float | None
+    drawdown_floor_minimo: float | None
+    drawdown_phase_label: str | None
+
+    trades_abertos: int
+    max_trades_simultaneos: int
+    teses_abertas: int
+    max_teses_simultaneas: int
+
+    concentracao_tese: list[ConcentrationItem]
+    concentracao_classe: list[ConcentrationItem]
+
+    alerts: list[RiskAlert]

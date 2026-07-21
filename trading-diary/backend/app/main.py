@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, engine
-from app.routers import auth, journal, market_notes, stats, trades
+from app.routers import auth, journal, market_notes, risk, risk_settings, stats, trades
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +22,8 @@ app.include_router(trades.router)
 app.include_router(market_notes.router)
 app.include_router(journal.router)
 app.include_router(stats.router)
+app.include_router(risk_settings.router)
+app.include_router(risk.router)
 
 
 @app.get("/health")

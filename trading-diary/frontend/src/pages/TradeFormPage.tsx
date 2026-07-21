@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { tradesApi } from "../api/endpoints";
-import { MARKETS, type TradeInput } from "../types";
-import { toLocalInputValue } from "../utils/format";
+import { riskSettingsApi, tradesApi } from "../api/endpoints";
+import { CONVICTIONS, MARKETS, type ConvictionTier, type TradeInput } from "../types";
+import { formatCurrency, formatNumber, toLocalInputValue } from "../utils/format";
 
 const EMPTY: TradeInput = {
   asset: "",
@@ -22,6 +22,7 @@ const EMPTY: TradeInput = {
   thesis: "",
   notes: "",
   emotions: "",
+  conviction: null,
 };
 
 export default function TradeFormPage() {
@@ -32,6 +33,11 @@ export default function TradeFormPage() {
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tiers, setTiers] = useState<ConvictionTier[]>([]);
+
+  useEffect(() => {
+    riskSettingsApi.listConvictionTiers().then(setTiers);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -40,6 +46,11 @@ export default function TradeFormPage() {
       setLoading(false);
     });
   }, [id]);
+
+  const selectedTier = tiers.find((t) => t.label === form.conviction) ?? null;
+  const riskDistance = form.stop_price !== null ? Math.abs(form.entry_price - form.stop_price) : null;
+  const suggestedQuantity =
+    selectedTier && riskDistance && riskDistance > 0 ? Math.floor(selectedTier.risco_maximo / riskDistance) : null;
 
   function field<K extends keyof TradeInput>(key: K) {
     return {
@@ -160,6 +171,46 @@ export default function TradeFormPage() {
             <input type="number" step="any" {...field("fees")} />
           </div>
         </div>
+
+        <div>
+          <label>Convicção</label>
+          <select
+            value={form.conviction ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, conviction: (e.target.value || null) as TradeInput["conviction"] }))}
+          >
+            <option value="">Sem convicção definida</option>
+            {CONVICTIONS.map((c) => (
+              <option key={c.value} value={c.value}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {selectedTier && (
+          <div className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-xs text-slate-400 space-y-1">
+            <p>
+              Risco máximo para convicção <span className="text-slate-200">{selectedTier.label}</span>:{" "}
+              <span className="text-slate-200">{formatCurrency(selectedTier.risco_maximo)}</span>
+            </p>
+            {suggestedQuantity !== null ? (
+              <div className="flex items-center justify-between">
+                <span>
+                  Quantidade sugerida (pelo stop): <span className="text-slate-200">{formatNumber(suggestedQuantity, 0)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, quantity: suggestedQuantity }))}
+                  className="text-green-400"
+                >
+                  usar
+                </button>
+              </div>
+            ) : (
+              <p>Defina preço de entrada e stop para calcular a quantidade sugerida.</p>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>

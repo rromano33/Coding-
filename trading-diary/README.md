@@ -64,6 +64,15 @@ sua máquina e acessar pelo IP dela na mesma rede Wi-Fi do celular
   fluxo, notícias) — sem integração automática de dados de preço.
 - **Impressões/disciplina**: diário de estado emocional e nota de
   disciplina (1-5) por dia.
+- **Risco**: framework de risco do book, todo editável em Opções (⚙, dentro
+  da aba Risco) — capital/budget, sharpe meta, stops em camadas (alerta +
+  stop duro, diário/mensal/anual), risco por trade por nível de convicção,
+  limites de concentração por tese/classe, regras comportamentais,
+  drawdown dinâmico por fase de PnL construído e postura sazonal. A aba
+  Risco calcula ao vivo: PnL dia/mês/ano vs. os stops, drawdown atual vs.
+  o permitido na fase, concentração de risco aberto por tese/classe, e
+  gera alertas quando algum limite é violado. O formulário de trade sugere
+  quantidade a partir da convicção escolhida + distância até o stop.
 
 ## Próximos passos possíveis
 

@@ -70,6 +70,7 @@ export default function TradeDetailPage() {
         <Row label="Alvo" value={trade.target_price !== null ? formatNumber(trade.target_price) : "—"} />
         <Row label="Taxas" value={formatCurrency(trade.fees)} />
         <Row label="Estratégia" value={trade.strategy || "—"} />
+        <Row label="Convicção" value={trade.conviction || "—"} />
         <Row label="Tags" value={trade.tags || "—"} />
         <Row label="Estado emocional" value={trade.emotions || "—"} />
       </dl>
