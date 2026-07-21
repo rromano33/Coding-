@@ -3,7 +3,7 @@ from datetime import date
 from emrates.conventions.compounding import Compounding
 from emrates.conventions.daycount import DayCount
 from emrates.curves.base import Pillar, ParSwapCurveBuilder
-from emrates.curves.fra_strip import chain_from, extend_with_fra_strip, month_offset, parse_fra_period
+from emrates.curves.fra_strip import best_chain_start, chain_from, extend_with_fra_strip, month_offset, parse_fra_period
 from emrates.data.calendars import Calendar
 
 
@@ -24,6 +24,32 @@ def test_chain_from_stops_at_gap():
     assert chain_from(1, periods) == [(1, 4, 0.01), (4, 7, 0.01), (7, 10, 0.01)]
     assert chain_from(12, periods) == [(12, 15, 0.01)]
     assert chain_from(9, periods) == []  # no period starts at month 9
+
+
+def test_best_chain_start_prefers_the_farthest_reaching_chain():
+    # A real rolling monthly FRA strip (1X4, 2X5, 3X6, 4X7, 5X8, 6X9, 7X10,
+    # 8X11, 9X12, then quarterly 12X15...21X24) offers several different
+    # non-overlapping chains (starting at 1, 2, or 3) that each use a
+    # disjoint subset of the quotes. Starting at 1 only reaches month 10
+    # (1->4->7->10); starting at 3 reaches all the way to 24
+    # (3->6->9->12->15->18->21->24) with zero gap against a swap curve
+    # anchored at 12 months — that's the one that should be picked.
+    periods = {
+        1: (4, -0.0207), 2: (5, -0.0234), 3: (6, -0.0300), 4: (7, -0.0360), 5: (8, -0.0413),
+        6: (9, -0.0460), 7: (10, -0.0473), 8: (11, -0.0487), 9: (12, -0.0500),
+        12: (15, -0.0530), 15: (18, -0.0550), 18: (21, -0.0570), 21: (24, -0.0590),
+    }
+    start, chain = best_chain_start(periods, cap_month=24)
+    assert start == 3
+    assert chain[-1] == (21, 24, -0.0590)
+    assert [c[0] for c in chain] == [3, 6, 9, 12, 15, 18, 21]
+
+
+def test_best_chain_start_caps_at_the_swap_curve_anchor():
+    periods = {1: (4, 0.01), 4: (7, 0.01), 7: (10, 0.01), 3: (6, 0.02), 6: (9, 0.02), 9: (12, 0.02)}
+    start, chain = best_chain_start(periods, cap_month=12)
+    assert start == 3
+    assert chain[-1][1] == 12  # reaches exactly the swap curve's anchor, doesn't overshoot
 
 
 def test_extend_with_fra_strip_fills_short_end_and_matches_swap_pillars():

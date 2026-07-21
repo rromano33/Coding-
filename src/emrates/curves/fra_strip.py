@@ -52,6 +52,37 @@ def chain_from(anchor_month: int, periods: dict[int, tuple[int, float]]) -> list
     return chain
 
 
+def best_chain_start(periods: dict[int, tuple[int, float]], cap_month: int) -> tuple[int | None, list[tuple[int, int, float]]]:
+    """A real rolling FRA strip (1X4, 2X5, 3X6, 4X7, 5X8, 6X9, 7X10, 8X11,
+    9X12, 12X15, ...) has several different starting months that each chain
+    contiguously (1->4->7->10, or 2->5->8->11, or 3->6->9->12->...) — they
+    are NOT redundant, each uses a disjoint subset of the real quotes, and
+    they reach different distances. Picking a fixed starting month (e.g.
+    always 1) can strand most of the strip's real data and short of the
+    point (cap_month, e.g. the swap curve's own first pillar) it needs to
+    reach — in the exact period layout above, starting at 1 only reaches
+    month 10 using 3 quotes, while starting at 3 reaches all the way to 24
+    using 7. This tries every available starting month and keeps whichever
+    contiguous chain (capped so it never overshoots cap_month, where the
+    swap-quoted curve takes over) reaches farthest."""
+    best_start: int | None = None
+    best_chain: list[tuple[int, int, float]] = []
+    for start in sorted(periods):
+        if start > cap_month:
+            continue
+        chain: list[tuple[int, int, float]] = []
+        month = start
+        while month in periods:
+            end_month, rate = periods[month]
+            if end_month > cap_month:
+                break
+            chain.append((month, end_month, rate))
+            month = end_month
+        if chain and chain[-1][1] > (best_chain[-1][1] if best_chain else -1):
+            best_start, best_chain = start, chain
+    return best_start, best_chain
+
+
 def bootstrap_fra_chain(
     spot_date: date,
     anchor_date: date,
@@ -83,23 +114,29 @@ def extend_with_fra_strip(
     fra_data: list[tuple[int, int, float]],
     calendar: Calendar,
 ) -> DiscountCurve:
-    """Splices a FRA-strip short end onto an existing swap-only curve: one
-    chain from month 1 (anchored on the policy rate as a stub proxy for
-    [valuation_date, spot+1M]) up to as far as the strip chains, and one
-    chain from the curve's own first (shortest) pillar — assumed to be the
-    1Y swap point the 12x15/15x18/... FRAs pick up from — onward."""
+    """Splices a FRA-strip short end onto an existing swap-only curve: the
+    best-reaching chain the strip offers (see best_chain_start — anchored on
+    the policy rate as a stub proxy for [valuation_date, spot+start_month])
+    up to the curve's own first (shortest) pillar, assumed to be the 1Y swap
+    point the 12x15/15x18/... FRAs pick up from — plus a second chain from
+    that pillar onward."""
     periods = {start: (end, rate) for start, end, rate in fra_data}
-
     valuation_date = curve.valuation_date
-    short_anchor_date = calendar.adjust_following(month_offset(spot_date, 1))
-    short_anchor_tau = year_fraction(valuation_date, short_anchor_date, DayCount.ACT_360, calendar)
-    short_anchor_df = _df_from_rate(policy_rate, short_anchor_tau, Compounding.EXPONENTIAL)
-    short_chain = bootstrap_fra_chain(
-        spot_date, short_anchor_date, short_anchor_df, 1, chain_from(1, periods), calendar
-    )
 
     long_anchor_date, long_anchor_df = curve.pillar_dates[0], curve.discount_factors[0]
     long_anchor_month = round(year_fraction(spot_date, long_anchor_date, DayCount.ACT_360, calendar) * 12)
+
+    short_start, short_periods = best_chain_start(periods, long_anchor_month)
+    if short_start is None:
+        short_chain = []
+    else:
+        short_anchor_date = calendar.adjust_following(month_offset(spot_date, short_start))
+        short_anchor_tau = year_fraction(valuation_date, short_anchor_date, DayCount.ACT_360, calendar)
+        short_anchor_df = _df_from_rate(policy_rate, short_anchor_tau, Compounding.EXPONENTIAL)
+        short_chain = bootstrap_fra_chain(
+            spot_date, short_anchor_date, short_anchor_df, short_start, short_periods, calendar
+        )
+
     long_chain = bootstrap_fra_chain(
         spot_date, long_anchor_date, long_anchor_df, long_anchor_month, chain_from(long_anchor_month, periods), calendar
     )
