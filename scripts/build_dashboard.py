@@ -187,16 +187,27 @@ def main() -> None:
         print("Nenhum país com dado salvo — rode run_daily_pricing.py primeiro.")
         return
 
-    max_abs = max(
+    # Two separate domains: the heatmap shows the per-meeting change (small,
+    # typically single digits to ~20bps), the cards' mini-bar/Acumulado
+    # column shows the cumulative change (grows across the 8 meetings) — one
+    # shared domain would wash out the heatmap's colors.
+    max_abs_meeting = max(
+        (abs(row["implied_change_bps"]) for c in countries_data for row in c["rows"] if row["implied_change_bps"] == row["implied_change_bps"]),
+        default=1.0,
+    )
+    domain_meeting = max(15.0, max_abs_meeting)
+    max_abs_cumulative = max(
         (abs(row["cumulative_bps"]) for c in countries_data for row in c["rows"] if row["cumulative_bps"] == row["cumulative_bps"]),
         default=1.0,
     )
-    domain = max(30.0, max_abs)
+    domain_cumulative = max(30.0, max_abs_cumulative)
 
     # Countries as columns, meetings (ordinal — 1ª, 2ª, ...) as rows. Ordinal
     # labels rather than calendar months: each country's meetings fall on
     # different dates, so a shared row only makes sense by meeting order, and
-    # "M1" read as "Mês 1" (month) was ambiguous in Portuguese anyway.
+    # "M1" read as "Mês 1" (month) was ambiguous in Portuguese anyway. Cells
+    # show the change priced AT that meeting (not the cumulative) — the
+    # cumulative path is in the per-country cards below.
     heat_header = "".join(f'<th class="heat-col">{c["label"]}</th>' for c in countries_data)
     heat_rows = []
     for i in range(MEETINGS_SHOWN):
@@ -204,10 +215,10 @@ def main() -> None:
         for c in countries_data:
             if i < len(c["rows"]):
                 row = c["rows"][i]
-                bps = row["cumulative_bps"]
-                color_light = diverging_color(bps, domain, RED_LIGHT, GRAY_LIGHT, BLUE_LIGHT)
-                color_dark = diverging_color(bps, domain, RED_DARK, GRAY_DARK, BLUE_DARK)
-                title = f'{c["label"]} · {row["meeting_date"]} · {fmt_bps(bps)} bps acumulado'
+                bps = row["implied_change_bps"]
+                color_light = diverging_color(bps, domain_meeting, RED_LIGHT, GRAY_LIGHT, BLUE_LIGHT)
+                color_dark = diverging_color(bps, domain_meeting, RED_DARK, GRAY_DARK, BLUE_DARK)
+                title = f'{c["label"]} · {row["meeting_date"]} · {fmt_bps(bps)} bps nesta reunião'
                 cells.append(
                     f'<td class="heat-cell" style="--cell-light:{color_light};--cell-dark:{color_dark}" '
                     f'title="{title}">{fmt_bps(bps)}</td>'
@@ -228,7 +239,7 @@ def main() -> None:
         history_note = '<p class="history-note">Δ 5d ainda não disponível — precisa de 5 dias de histórico acumulado.</p>'
 
     generated_at = countries_data[0]["as_of"]
-    cards_html = "".join(render_country_card(c, domain) for c in countries_data)
+    cards_html = "".join(render_country_card(c, domain_cumulative) for c in countries_data)
 
     html = f"""<!doctype html>
 <html lang="pt-br">
@@ -321,7 +332,8 @@ def main() -> None:
   </div>
 
   <footer>
-    bps acumulado = variação total precificada desde hoje até aquela reunião (cumulative_change_from_spot_bps).
+    Mapa de calor: bps precificados NAQUELA reunião (implied_change_bps) — não é acumulado.
+    Acumulado (nas tabelas por país) = soma dos bps precificados desde hoje até aquela reunião (cumulative_change_from_spot_bps).
     Δ 1d/5d = variação do acumulado frente à curva salva 1/5 dias corridos atrás (usa o dia útil mais recente disponível).
     Gerado por scripts/build_dashboard.py.
   </footer>
