@@ -5,12 +5,11 @@ from datetime import date
 
 import pandas as pd
 
-from emrates.central_banks.stripper import strip_meeting_path
+from emrates.central_banks.stripper import MeetingPricing, strip_meeting_path
 from emrates.curves.base import DiscountCurve
 
 
-def priced_bc_report(curve: DiscountCurve, meeting_dates: list[date], current_policy_rate: float) -> pd.DataFrame:
-    results = strip_meeting_path(curve, meeting_dates, current_policy_rate)
+def meeting_pricing_to_dataframe(results: list[MeetingPricing]) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
@@ -23,3 +22,8 @@ def priced_bc_report(curve: DiscountCurve, meeting_dates: list[date], current_po
             for r in results
         ]
     )
+
+
+def priced_bc_report(curve: DiscountCurve, meeting_dates: list[date], current_policy_rate: float) -> pd.DataFrame:
+    results = strip_meeting_path(curve, meeting_dates, current_policy_rate)
+    return meeting_pricing_to_dataframe(results)

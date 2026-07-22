@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.curves.base import Pillar
 from emrates.curves.factory import build_curve_builder, load_country_config
+from emrates.curves.fra_direct import fra_priced_path
 from emrates.curves.fra_strip import extend_with_fra_strip, parse_fra_period
 from emrates.data.bbg_client import BbgClient
 from emrates.data.calendars import Calendar, CalendarSet
@@ -26,7 +27,7 @@ from emrates.data.excel_loader import InputsBCsLoader
 from emrates.data.ticker_parsing import TICKER_STRING_PARSING_COUNTRIES, brazil_di1_maturity
 from emrates.data.curve_store import save_curve
 from emrates.curves.nss import fit_nss_curve
-from emrates.reports.priced_bc import priced_bc_report
+from emrates.reports.priced_bc import meeting_pricing_to_dataframe, priced_bc_report
 
 COUNTRIES = ["brazil", "mexico", "chile", "colombia", "south_africa", "poland", "czech", "hungary"]
 
@@ -98,9 +99,10 @@ def main() -> None:
             pillars.append(Pillar(maturity=maturity, rate=rate))
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
 
+        fra_data = []
+        spot_date = calendar.add_business_days(valuation_date, 2)
         if fra_tickers:
             descriptions = bbg.reference_fields([t.ticker for t in fra_tickers], ["SECURITY_DES", "NAME"])
-            fra_data = []
             for _, row in descriptions.iterrows():
                 period = None
                 for field in ("SECURITY_DES", "NAME"):
@@ -120,22 +122,31 @@ def main() -> None:
                     print(f"[{country}] pulei {row['ticker']}: preço veio NaN da Bloomberg (sem cotação nesse ponto?).")
                     continue
                 fra_data.append((*period, rate))
-            spot_date = calendar.add_business_days(valuation_date, 2)
             curve = extend_with_fra_strip(curve, spot_date, current_policy_rate, fra_data, calendar)
 
         save_curve(curve, settings["paths"]["processed_dir"], country)
 
-        # +1: strip_meeting_path needs one meeting past the horizon to read the
-        # priced change *at* the last meeting you actually care about (see
-        # central_banks/stripper.py's docstring).
         horizon = settings["reporting"]["meetings_horizon"]
-        meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon + 1)
-        # Smoothed (NSS) curve for this report only — meeting-dated forwards over
-        # short windows far from today amplify the exact curve's pillar-to-pillar
-        # market noise into spurious swings (see curves/nss.py docstring). Position
-        # valuation/PnL keeps using the exact `curve`, saved above.
-        smoothed_curve = fit_nss_curve(curve)
-        report = priced_bc_report(smoothed_curve, meetings, current_policy_rate)
+        if country in FRA_STRIP_COUNTRIES and fra_data:
+            # Direct read of the FRA quotes themselves (no bootstrap, no NSS)
+            # — matches the desk's own FRA reference sheet by construction and
+            # sidesteps the FRA-to-swap-curve seam that a bootstrap+NSS path
+            # amplifies badly (see curves/fra_direct.py docstring). Only the
+            # priced_bc report changes; the exact FRA+swap-spliced `curve`
+            # saved above is still what position valuation/PnL uses.
+            meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon)
+            results = fra_priced_path(spot_date, current_policy_rate, fra_data, meetings)
+            report = meeting_pricing_to_dataframe(results)
+        else:
+            # +1: strip_meeting_path needs one meeting past the horizon to read the
+            # priced change *at* the last meeting you actually care about (see
+            # central_banks/stripper.py's docstring).
+            meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon + 1)
+            # Smoothed (NSS) curve for this report only — meeting-dated forwards over
+            # short windows far from today amplify the exact curve's pillar-to-pillar
+            # market noise into spurious swings (see curves/nss.py docstring).
+            smoothed_curve = fit_nss_curve(curve)
+            report = priced_bc_report(smoothed_curve, meetings, current_policy_rate)
         out_path = Path(settings["paths"]["processed_dir"]) / f"priced_bc_{country}_{valuation_date}.csv"
         report.to_csv(out_path, index=False)
 
