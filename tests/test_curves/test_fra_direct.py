@@ -76,6 +76,22 @@ def test_first_meeting_change_is_measured_from_ref_rate():
     assert results[0].cumulative_change_from_spot_bps == pytest.approx(25.0, abs=0.5)
 
 
+def test_short_term_meetings_read_close_to_the_first_fra_not_smeared_toward_it():
+    # Real Hungary numbers: Ref Rate 5.60, first FRA quote is "1X4" (starts 1
+    # month out, ends 4 months out) at 5.49% (-11.0bps). Before this fix, a
+    # meeting 1-2 months out (well inside the FRA's own window) read only
+    # -3 to -5.5bps — a straight line from ref_rate smeared "1X4"'s move
+    # evenly across the whole 4-month gap, when the quote itself says the
+    # market expects close to -11bps for the ENTIRE window starting at
+    # month 1. A meeting near month 1 should already read close to -11bps.
+    ref_rate = 0.0560
+    fra_data = [(1, 4, 0.0549), (4, 7, 0.0536), (7, 10, 0.0526)]
+    meetings = [_date_at_months(m) for m in [1, 2, 3, 4]]
+    results = fra_priced_path(SPOT, ref_rate, fra_data, meetings, CALENDAR)
+    for r in results:
+        assert r.cumulative_change_from_spot_bps == pytest.approx(-11.0, abs=1.0)
+
+
 def test_fra_point_positioned_at_its_real_calendar_date_not_a_month_average():
     # A FRA end-month is calendar-month arithmetic (same day-of-month, N
     # months later — see fra_strip.month_offset), not a fixed 30.4368-day

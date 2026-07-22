@@ -48,12 +48,6 @@ COUNTRY_LABELS = {
 }
 MEETINGS_SHOWN = 8
 
-# These 3 have their priced_bc horizon tied to how far their real FRA quotes
-# reach (run_daily_pricing.py), not a fixed meeting count — showing only the
-# first MEETINGS_SHOWN would cut the card off before the FRA-implied terminal
-# level (e.g. Hungary's 21X24 quote, ~24 months out) is even reached.
-FRA_STRIP_COUNTRIES = {"czech", "poland", "hungary"}
-
 
 def find_snapshots(processed_dir: Path, country: str) -> dict[date, Path]:
     pattern = re.compile(rf"priced_bc_{re.escape(country)}_(\d{{4}}-\d{{2}}-\d{{2}})\.csv$")
@@ -89,9 +83,7 @@ def build_country_data(processed_dir: Path, country: str) -> dict | None:
     if not snapshots:
         return None
     latest_date = max(snapshots)
-    latest_df = pd.read_csv(snapshots[latest_date], parse_dates=["meeting_date"])
-    if country not in FRA_STRIP_COUNTRIES:
-        latest_df = latest_df.head(MEETINGS_SHOWN)
+    latest_df = pd.read_csv(snapshots[latest_date], parse_dates=["meeting_date"]).head(MEETINGS_SHOWN)
 
     one_day_path = nearest_at_or_before(snapshots, latest_date - timedelta(days=1))
     five_day_path = nearest_at_or_before(snapshots, latest_date - timedelta(days=5))
@@ -155,18 +147,12 @@ def render_country_card(c: dict, domain: float) -> str:
               <td class="num {'ink-muted' if row['delta_5d'] is None else ''}">{fmt_bps(row['delta_5d'])}</td>
             </tr>"""
         )
-    # FRA-strip countries (Czech/Poland/Hungary) show every meeting within
-    # the FRA quotes' own real coverage (see run_daily_pricing.py), which can
-    # run well past MEETINGS_SHOWN — cap the table's height and let it
-    # scroll internally so a long list doesn't blow out the card grid.
-    scroll_style = ' style="max-height:280px;overflow-y:auto;"' if len(c["rows"]) > MEETINGS_SHOWN else ""
     return f"""
     <section class="card">
       <header class="card-header">
         <h3>{c['label']}</h3>
         <span class="policy-rate">taxa atual: <strong>{policy_txt}</strong></span>
       </header>
-      <div class="country-table-scroll"{scroll_style}>
       <table class="country-table">
         <thead>
           <tr>
@@ -176,7 +162,6 @@ def render_country_card(c: dict, domain: float) -> str:
         </thead>
         <tbody>{"".join(rows_html)}</tbody>
       </table>
-      </div>
     </section>"""
 
 

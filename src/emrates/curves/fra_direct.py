@@ -61,10 +61,31 @@ def fra_priced_path(
     arithmetic exactly: cumulative at meeting i = level at meeting i's own
     date minus ref_rate; the change priced at meeting i is that level minus
     the previous meeting's (or ref_rate, for the first meeting). No extra
-    trailing meeting needed — every date passed in gets its own row."""
+    trailing meeting needed — every date passed in gets its own row.
+
+    The very first segment gets one extra anchor: the earliest FRA's own
+    *start* month, held at that FRA's rate, not just its end month. Without
+    it, the only two points bracketing the near term are (0, ref_rate) and
+    (first_end_month, first_rate) — e.g. Hungary's "1X4" quote (ending 4
+    months out) — so a straight line smears that quote's move evenly across
+    the whole 4-month gap. But "1X4" IS the market's rate for the window
+    starting 1 month out; the meeting nearest month 1 should already read
+    close to it, not a quarter of the way there. Every FRA from the second
+    one on already has this covered for free — a rolling monthly strip's end
+    months (4,5,6,7,...) are consecutive, so linear interpolation between
+    them barely stretches past adjacent real data. Only the gap before the
+    very first quote lacks a second point to pin it down."""
     points = sorted({(end, rate) for _, end, rate in fra_data})
     xs = [0] + [(calendar.adjust_modified_following(month_offset(spot_date, end)) - spot_date).days for end, _ in points]
     ys = [ref_rate] + [rate for _, rate in points]
+
+    if len(points) >= 1:
+        first_end = points[0][0]
+        first_start = min(start for start, end, _ in fra_data if end == first_end)
+        first_start_date = (calendar.adjust_modified_following(month_offset(spot_date, first_start)) - spot_date).days
+        if 0 < first_start_date < xs[1]:
+            xs.insert(1, first_start_date)
+            ys.insert(1, points[0][1])
 
     def level_at(days_from_spot: int) -> float:
         if days_from_spot <= xs[0]:
