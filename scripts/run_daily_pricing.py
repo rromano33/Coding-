@@ -135,7 +135,7 @@ def main() -> None:
             # priced_bc report changes; the exact FRA+swap-spliced `curve`
             # saved above is still what position valuation/PnL uses.
             meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon)
-            results = fra_priced_path(spot_date, current_policy_rate, fra_data, meetings)
+            results = fra_priced_path(spot_date, current_policy_rate, fra_data, meetings, calendar)
             report = meeting_pricing_to_dataframe(results)
         else:
             # +1: strip_meeting_path needs one meeting past the horizon to read the

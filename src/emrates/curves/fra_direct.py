@@ -25,12 +25,8 @@ from __future__ import annotations
 from datetime import date
 
 from emrates.central_banks.stripper import MeetingPricing
-
-_AVG_DAYS_PER_MONTH = 30.4368  # average Gregorian month length
-
-
-def _months_from_spot(spot_date: date, d: date) -> float:
-    return (d - spot_date).days / _AVG_DAYS_PER_MONTH
+from emrates.curves.fra_strip import month_offset
+from emrates.data.calendars import Calendar
 
 
 def fra_priced_path(
@@ -38,9 +34,24 @@ def fra_priced_path(
     ref_rate: float,
     fra_data: list[tuple[int, int, float]],
     meeting_dates: list[date],
+    calendar: Calendar,
 ) -> list[MeetingPricing]:
     """fra_data: (start_month, end_month, rate) as parsed from FRA tickers —
     every quote is used as an (end_month, rate) point, overlaps and all.
+
+    Interpolates over real calendar day-counts from spot, not a nominal
+    "N months = N*30.4368 days" approximation: a FRA's end_month label is a
+    *calendar*-month offset (see fra_strip.month_offset — same day-of-month,
+    N months later, business-day adjusted), which doesn't sit at a uniform
+    30.4368-day cadence in general (real months run 28-31 days). Using the
+    bare integer label as the x-axis for FRA points while converting meeting
+    dates through a fixed average-month divisor mismatches the two axes'
+    units and biases the interpolated level — small per point, but it
+    compounds across several months (this was the residual gap after the
+    first fix: Czech matched the reference closely, Poland still ran
+    noticeably low). Computing each FRA point's actual date the same way
+    fra_strip.py does, and comparing real day-counts throughout, removes
+    that bias.
 
     Unlike central_banks.stripper.strip_meeting_path (which treats meeting
     dates as *boundaries* between inter-meeting forward-rate segments, and
@@ -52,17 +63,17 @@ def fra_priced_path(
     the previous meeting's (or ref_rate, for the first meeting). No extra
     trailing meeting needed — every date passed in gets its own row."""
     points = sorted({(end, rate) for _, end, rate in fra_data})
-    xs = [0.0] + [float(end) for end, _ in points]
+    xs = [0] + [(calendar.adjust_following(month_offset(spot_date, end)) - spot_date).days for end, _ in points]
     ys = [ref_rate] + [rate for _, rate in points]
 
-    def level_at(months: float) -> float:
-        if months <= xs[0]:
+    def level_at(days_from_spot: int) -> float:
+        if days_from_spot <= xs[0]:
             return ys[0]
-        if months >= xs[-1]:
+        if days_from_spot >= xs[-1]:
             return ys[-1]
         for i in range(1, len(xs)):
-            if months <= xs[i]:
-                t = (months - xs[i - 1]) / (xs[i] - xs[i - 1])
+            if days_from_spot <= xs[i]:
+                t = (days_from_spot - xs[i - 1]) / (xs[i] - xs[i - 1])
                 return ys[i - 1] + t * (ys[i] - ys[i - 1])
         return ys[-1]
 
@@ -71,7 +82,7 @@ def fra_priced_path(
     prev_level = ref_rate
     cumulative = 0.0
     for meeting_date in meeting_dates:
-        level = level_at(_months_from_spot(spot_date, meeting_date))
+        level = level_at((meeting_date - spot_date).days)
         change_bps = (level - prev_level) * 1e4
         cumulative += change_bps
         results.append(
