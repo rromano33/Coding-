@@ -20,7 +20,7 @@ from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.curves.base import Pillar
 from emrates.curves.factory import build_curve_builder, load_country_config
 from emrates.curves.fra_direct import fra_priced_path
-from emrates.curves.fra_strip import extend_with_fra_strip, parse_fra_period
+from emrates.curves.fra_strip import extend_with_fra_strip, month_offset, parse_fra_period
 from emrates.data.bbg_client import BbgClient
 from emrates.data.calendars import Calendar, CalendarSet
 from emrates.data.excel_loader import InputsBCsLoader
@@ -134,7 +134,21 @@ def main() -> None:
             # amplifies badly (see curves/fra_direct.py docstring). Only the
             # priced_bc report changes; the exact FRA+swap-spliced `curve`
             # saved above is still what position valuation/PnL uses.
-            meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon)
+            #
+            # Horizon here is calendar time (how far the FRA quotes actually
+            # reach), not a fixed meeting COUNT — meetings_horizon=12 meetings
+            # is ~12 months for a monthly-deciding bank (Hungary) but ~18
+            # months for one deciding 8x/year (Czech/Poland), so a fixed
+            # count stops well short of the FRA strip's own coverage (e.g.
+            # Hungary's 21X24 quote, 24 months out) for the faster-deciding
+            # country specifically. Using every real meeting within the
+            # FRA's own covered window instead means the report — and the
+            # dashboard reading off it — actually reaches the same terminal
+            # level the FRA quotes imply, rather than truncating before it.
+            last_fra_end_month = max(end for _, end, _ in fra_data)
+            fra_horizon_date = calendar.adjust_modified_following(month_offset(spot_date, last_fra_end_month))
+            all_future_meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date)
+            meetings = [m for m in all_future_meetings if m <= fra_horizon_date]
             results = fra_priced_path(spot_date, current_policy_rate, fra_data, meetings, calendar)
             report = meeting_pricing_to_dataframe(results)
         else:
