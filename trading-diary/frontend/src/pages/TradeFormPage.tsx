@@ -23,6 +23,7 @@ const EMPTY: TradeInput = {
   notes: "",
   emotions: "",
   conviction: null,
+  vol_diaria_pct: null,
 };
 
 export default function TradeFormPage() {
@@ -49,17 +50,27 @@ export default function TradeFormPage() {
 
   const selectedTier = tiers.find((t) => t.label === form.conviction) ?? null;
   const riskDistance = form.stop_price !== null ? Math.abs(form.entry_price - form.stop_price) : null;
-  const suggestedQuantity =
+  const suggestedQuantityStop =
     selectedTier && riskDistance && riskDistance > 0 ? Math.floor(selectedTier.risco_maximo / riskDistance) : null;
+
+  const volAmount = form.vol_diaria_pct && form.entry_price ? form.entry_price * (form.vol_diaria_pct / 100) : null;
+  const suggestedQuantityVol =
+    selectedTier && volAmount && volAmount > 0 ? Math.floor(selectedTier.risco_maximo / volAmount) : null;
 
   function field<K extends keyof TradeInput>(key: K) {
     return {
       value: (form[key] ?? "") as string | number,
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const raw = e.target.value;
-        const isNumeric = ["entry_price", "exit_price", "quantity", "stop_price", "target_price", "fees"].includes(
-          key as string
-        );
+        const isNumeric = [
+          "entry_price",
+          "exit_price",
+          "quantity",
+          "stop_price",
+          "target_price",
+          "fees",
+          "vol_diaria_pct",
+        ].includes(key as string);
         setForm((f) => ({ ...f, [key]: isNumeric ? (raw === "" ? null : Number(raw)) : raw }));
       },
     };
@@ -172,42 +183,66 @@ export default function TradeFormPage() {
           </div>
         </div>
 
-        <div>
-          <label>Convicção</label>
-          <select
-            value={form.conviction ?? ""}
-            onChange={(e) => setForm((f) => ({ ...f, conviction: (e.target.value || null) as TradeInput["conviction"] }))}
-          >
-            <option value="">Sem convicção definida</option>
-            {CONVICTIONS.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label>Convicção</label>
+            <select
+              value={form.conviction ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, conviction: (e.target.value || null) as TradeInput["conviction"] }))}
+            >
+              <option value="">Sem convicção definida</option>
+              {CONVICTIONS.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label>Vol diária estimada (%)</label>
+            <input type="number" step="any" placeholder="ex: 2" {...field("vol_diaria_pct")} />
+          </div>
         </div>
 
         {selectedTier && (
-          <div className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-xs text-slate-400 space-y-1">
+          <div className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2.5 text-xs text-slate-400 space-y-2">
             <p>
               Risco máximo para convicção <span className="text-slate-200">{selectedTier.label}</span>:{" "}
               <span className="text-slate-200">{formatCurrency(selectedTier.risco_maximo)}</span>
             </p>
-            {suggestedQuantity !== null ? (
+
+            {suggestedQuantityStop !== null ? (
               <div className="flex items-center justify-between">
                 <span>
-                  Quantidade sugerida (pelo stop): <span className="text-slate-200">{formatNumber(suggestedQuantity, 0)}</span>
+                  Sugestão pelo stop: <span className="text-slate-200">{formatNumber(suggestedQuantityStop, 0)}</span>
                 </span>
                 <button
                   type="button"
-                  onClick={() => setForm((f) => ({ ...f, quantity: suggestedQuantity }))}
+                  onClick={() => setForm((f) => ({ ...f, quantity: suggestedQuantityStop }))}
                   className="text-green-400"
                 >
                   usar
                 </button>
               </div>
             ) : (
-              <p>Defina preço de entrada e stop para calcular a quantidade sugerida.</p>
+              <p>Defina entrada e stop para a sugestão por distância ao stop.</p>
+            )}
+
+            {suggestedQuantityVol !== null ? (
+              <div className="flex items-center justify-between">
+                <span>
+                  Sugestão pela vol do ativo: <span className="text-slate-200">{formatNumber(suggestedQuantityVol, 0)}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, quantity: suggestedQuantityVol }))}
+                  className="text-green-400"
+                >
+                  usar
+                </button>
+              </div>
+            ) : (
+              <p>Preencha a vol diária estimada para a sugestão baseada em volatilidade (1x vol diária = risco máximo).</p>
             )}
           </div>
         )}

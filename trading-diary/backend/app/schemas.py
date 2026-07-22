@@ -51,6 +51,7 @@ class TradeBase(BaseModel):
     notes: str | None = None
     emotions: str | None = None
     conviction: str | None = None  # baixa | media | alta | extrema
+    vol_diaria_pct: float | None = None  # vol diária estimada do ativo, ex: 0.02 = 2%
 
 
 class TradeCreate(TradeBase):
@@ -76,6 +77,11 @@ class TradeUpdate(BaseModel):
     notes: str | None = None
     emotions: str | None = None
     conviction: str | None = None
+    vol_diaria_pct: float | None = None
+
+
+class TradePriceUpdate(BaseModel):
+    current_price: float
 
 
 class TradeRead(TradeBase):
@@ -84,6 +90,10 @@ class TradeRead(TradeBase):
     id: int
     pnl: float | None = None
     r_multiple: float | None = None
+    current_price: float | None = None
+    current_price_updated_at: datetime.datetime | None = None
+    unrealized_pnl: float | None = None
+    stop_alert: str | None = None  # "perto" | "atingido"
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -273,6 +283,7 @@ class SeasonalPostureRead(SeasonalPostureItem):
 class RiskAlert(BaseModel):
     severity: str  # "alerta" | "stop"
     message: str
+    trade_id: int | None = None
 
 
 class ConcentrationItem(BaseModel):

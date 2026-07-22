@@ -37,19 +37,29 @@ export default function RiskStatusPage() {
 
       {status.alerts.length > 0 && (
         <div className="space-y-2">
-          {status.alerts.map((alert, i) => (
-            <div
-              key={i}
-              className={`rounded-lg px-3 py-2.5 text-sm border ${
-                alert.severity === "stop"
-                  ? "bg-red-950/60 border-red-800 text-red-300"
-                  : "bg-amber-950/40 border-amber-800 text-amber-300"
-              }`}
-            >
-              <span className="font-medium">{alert.severity === "stop" ? "STOP — " : "Alerta — "}</span>
-              {alert.message}
-            </div>
-          ))}
+          {status.alerts.map((alert, i) => {
+            const className = `block rounded-lg px-3 py-2.5 text-sm border ${
+              alert.severity === "stop"
+                ? "bg-red-950/60 border-red-800 text-red-300"
+                : "bg-amber-950/40 border-amber-800 text-amber-300"
+            }`;
+            const content = (
+              <>
+                <span className="font-medium">{alert.severity === "stop" ? "STOP — " : "Alerta — "}</span>
+                {alert.message}
+                {alert.trade_id !== null && <span className="ml-1 underline">ver trade →</span>}
+              </>
+            );
+            return alert.trade_id !== null ? (
+              <Link key={i} to={`/trades/${alert.trade_id}`} className={className}>
+                {content}
+              </Link>
+            ) : (
+              <div key={i} className={className}>
+                {content}
+              </div>
+            );
+          })}
         </div>
       )}
       {status.alerts.length === 0 && (

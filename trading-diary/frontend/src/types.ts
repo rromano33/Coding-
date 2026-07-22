@@ -31,8 +31,13 @@ export interface Trade {
   notes: string | null;
   emotions: string | null;
   conviction: Conviction | null;
+  vol_diaria_pct: number | null;
   pnl: number | null;
   r_multiple: number | null;
+  current_price: number | null;
+  current_price_updated_at: string | null;
+  unrealized_pnl: number | null;
+  stop_alert: "perto" | "atingido" | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,7 +51,18 @@ export const CONVICTIONS: { value: Conviction; label: string }[] = [
   { value: "extrema", label: "Extrema (raro)" },
 ];
 
-export type TradeInput = Omit<Trade, "id" | "pnl" | "r_multiple" | "created_at" | "updated_at">;
+export type TradeInput = Omit<
+  Trade,
+  | "id"
+  | "pnl"
+  | "r_multiple"
+  | "created_at"
+  | "updated_at"
+  | "current_price"
+  | "current_price_updated_at"
+  | "unrealized_pnl"
+  | "stop_alert"
+>;
 
 export interface MarketNote {
   id: number;
@@ -175,6 +191,7 @@ export type SeasonalPostureInput = Omit<SeasonalPosture, "id">;
 export interface RiskAlert {
   severity: "alerta" | "stop";
   message: string;
+  trade_id: number | null;
 }
 
 export interface ConcentrationItem {

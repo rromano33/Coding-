@@ -55,6 +55,10 @@ class Trade(Base):
     strategy: Mapped[str | None] = mapped_column(String(128), nullable=True)  # também usado como "tese" p/ concentração
     tags: Mapped[str | None] = mapped_column(String(255), nullable=True)  # comma-separated
     conviction: Mapped[str | None] = mapped_column(String(16), nullable=True)  # baixa | media | alta | extrema
+    vol_diaria_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # vol diária estimada do ativo, ex: 0.02 = 2%
+
+    current_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # última marcação manual (posição aberta)
+    current_price_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
     r_multiple: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -67,6 +71,37 @@ class Trade(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
     user: Mapped["User"] = relationship(back_populates="trades")
+
+    @property
+    def unrealized_pnl(self) -> float | None:
+        if self.status != "open" or self.current_price is None:
+            return None
+        if self.direction == "short":
+            gross = (self.entry_price - self.current_price) * self.quantity
+        else:
+            gross = (self.current_price - self.entry_price) * self.quantity
+        return gross - self.fees
+
+    @property
+    def stop_alert(self) -> str | None:
+        """'atingido' se o preço já cruzou o stop, 'perto' se está a <=20% do caminho até lá."""
+        if self.status != "open" or self.current_price is None or self.stop_price is None:
+            return None
+        if self.direction == "short":
+            if self.current_price >= self.stop_price:
+                return "atingido"
+            total_distance = self.stop_price - self.entry_price
+            remaining = self.stop_price - self.current_price
+        else:
+            if self.current_price <= self.stop_price:
+                return "atingido"
+            total_distance = self.entry_price - self.stop_price
+            remaining = self.current_price - self.stop_price
+        if total_distance <= 0:
+            return None
+        if remaining <= 0.2 * total_distance:
+            return "perto"
+        return None
 
 
 class MarketNote(Base):

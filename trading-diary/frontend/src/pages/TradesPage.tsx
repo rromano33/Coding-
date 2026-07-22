@@ -72,6 +72,15 @@ export default function TradesPage() {
                   >
                     {trade.direction === "long" ? "COMPRA" : "VENDA"}
                   </span>
+                  {trade.stop_alert && (
+                    <span
+                      className={`text-xs px-1.5 py-0.5 rounded ml-1 ${
+                        trade.stop_alert === "atingido" ? "bg-red-600/20 text-red-400" : "bg-amber-600/20 text-amber-400"
+                      }`}
+                    >
+                      {trade.stop_alert === "atingido" ? "STOP" : "perto do stop"}
+                    </span>
+                  )}
                 </p>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {formatDate(trade.entry_date)} · {trade.strategy || "sem estratégia"}
@@ -79,7 +88,11 @@ export default function TradesPage() {
               </div>
               <div className="text-right">
                 {trade.status === "open" ? (
-                  <span className="text-xs text-amber-400">aberto</span>
+                  trade.unrealized_pnl !== null ? (
+                    <p className={`font-semibold ${pnlColor(trade.unrealized_pnl)}`}>{formatCurrency(trade.unrealized_pnl)}</p>
+                  ) : (
+                    <span className="text-xs text-amber-400">aberto</span>
+                  )
                 ) : (
                   <p className={`font-semibold ${pnlColor(trade.pnl)}`}>{formatCurrency(trade.pnl)}</p>
                 )}

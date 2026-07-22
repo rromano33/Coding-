@@ -9,10 +9,15 @@ export default function TradeDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [trade, setTrade] = useState<Trade | null>(null);
+  const [priceInput, setPriceInput] = useState("");
+  const [updatingPrice, setUpdatingPrice] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    tradesApi.get(Number(id)).then(setTrade);
+    tradesApi.get(Number(id)).then((t) => {
+      setTrade(t);
+      setPriceInput(t.current_price !== null ? String(t.current_price) : "");
+    });
   }, [id]);
 
   async function handleDelete() {
@@ -20,6 +25,18 @@ export default function TradeDetailPage() {
     if (!confirm(`Excluir o trade de ${trade.asset}? Essa ação não pode ser desfeita.`)) return;
     await tradesApi.remove(trade.id);
     navigate("/");
+  }
+
+  async function handleUpdatePrice(e: React.FormEvent) {
+    e.preventDefault();
+    if (!trade || priceInput === "") return;
+    setUpdatingPrice(true);
+    try {
+      const updated = await tradesApi.updatePrice(trade.id, Number(priceInput));
+      setTrade(updated);
+    } finally {
+      setUpdatingPrice(false);
+    }
   }
 
   if (!trade) return <p className="text-slate-500 text-sm">Carregando...</p>;
@@ -38,6 +55,15 @@ export default function TradeDetailPage() {
           >
             {trade.direction === "long" ? "COMPRA" : "VENDA"}
           </span>
+          {trade.stop_alert && (
+            <span
+              className={`text-xs px-1.5 py-0.5 rounded align-middle ml-1 ${
+                trade.stop_alert === "atingido" ? "bg-red-600/20 text-red-400" : "bg-amber-600/20 text-amber-400"
+              }`}
+            >
+              {trade.stop_alert === "atingido" ? "STOP ATINGIDO" : "PERTO DO STOP"}
+            </span>
+          )}
         </h1>
         <Link to={`/trades/${trade.id}/edit`} className="text-sm text-green-400">
           Editar
@@ -46,9 +72,13 @@ export default function TradeDetailPage() {
 
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-3">
-          <p className="text-xs text-slate-500 mb-1">Resultado</p>
-          <p className={`text-lg font-semibold ${pnlColor(trade.pnl)}`}>
-            {trade.status === "open" ? "aberto" : formatCurrency(trade.pnl)}
+          <p className="text-xs text-slate-500 mb-1">{trade.status === "open" ? "PnL aberto" : "Resultado"}</p>
+          <p className={`text-lg font-semibold ${pnlColor(trade.status === "open" ? trade.unrealized_pnl : trade.pnl)}`}>
+            {trade.status === "open"
+              ? trade.unrealized_pnl !== null
+                ? formatCurrency(trade.unrealized_pnl)
+                : "sem marcação"
+              : formatCurrency(trade.pnl)}
           </p>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-3">
@@ -56,6 +86,33 @@ export default function TradeDetailPage() {
           <p className="text-lg font-semibold">{trade.r_multiple !== null ? `${formatNumber(trade.r_multiple)}R` : "—"}</p>
         </div>
       </div>
+
+      {trade.status === "open" && (
+        <form onSubmit={handleUpdatePrice} className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3 mb-4">
+          <label>Marcar preço atual</label>
+          <div className="flex gap-2">
+            <input
+              type="number"
+              step="any"
+              placeholder={trade.stop_price !== null ? `stop em ${formatNumber(trade.stop_price)}` : "preço"}
+              value={priceInput}
+              onChange={(e) => setPriceInput(e.target.value)}
+            />
+            <button
+              type="submit"
+              disabled={updatingPrice || priceInput === ""}
+              className="shrink-0 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white text-sm font-medium px-4 rounded-lg"
+            >
+              {updatingPrice ? "..." : "Marcar"}
+            </button>
+          </div>
+          {trade.current_price !== null && (
+            <p className="text-xs text-slate-500 mt-2">
+              Última marcação: {formatNumber(trade.current_price)} em {formatDateTime(trade.current_price_updated_at)}
+            </p>
+          )}
+        </form>
+      )}
 
       <dl className="bg-slate-900 border border-slate-800 rounded-xl divide-y divide-slate-800 text-sm mb-4">
         <Row label="Mercado" value={marketLabel} />

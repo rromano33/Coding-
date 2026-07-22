@@ -72,7 +72,12 @@ sua máquina e acessar pelo IP dela na mesma rede Wi-Fi do celular
   Risco calcula ao vivo: PnL dia/mês/ano vs. os stops, drawdown atual vs.
   o permitido na fase, concentração de risco aberto por tese/classe, e
   gera alertas quando algum limite é violado. O formulário de trade sugere
-  quantidade a partir da convicção escolhida + distância até o stop.
+  quantidade de duas formas: pela distância até o stop, e pela volatilidade
+  estimada do ativo (você digita a vol diária % — sem integração de
+  mercado). Cada trade aberto pode ser marcado com o preço atual (manual):
+  o app calcula PnL aberto e avisa quando o preço está perto do stop
+  (badge amarelo) ou já cruzou (badge vermelho + alerta "stop" na aba
+  Risco, com link direto pro trade).
 
 ## Próximos passos possíveis
 

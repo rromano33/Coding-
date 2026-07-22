@@ -46,6 +46,7 @@ export const tradesApi = {
   get: (id: number) => api.get<Trade>(`/trades/${id}`),
   create: (payload: TradeInput) => api.post<Trade>("/trades", payload),
   update: (id: number, payload: Partial<TradeInput>) => api.put<Trade>(`/trades/${id}`, payload),
+  updatePrice: (id: number, currentPrice: number) => api.patch<Trade>(`/trades/${id}/price`, { current_price: currentPrice }),
   remove: (id: number) => api.delete<void>(`/trades/${id}`),
 };
 

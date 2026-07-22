@@ -7,7 +7,7 @@ from app.auth import get_current_user
 from app.calculations import apply_computed_fields
 from app.database import get_db
 from app.models import Trade, User
-from app.schemas import TradeCreate, TradeRead, TradeUpdate
+from app.schemas import TradeCreate, TradePriceUpdate, TradeRead, TradeUpdate
 
 router = APIRouter(prefix="/trades", tags=["trades"])
 
@@ -72,6 +72,23 @@ def update_trade(
         setattr(trade, field, value)
 
     apply_computed_fields(trade)
+    db.commit()
+    db.refresh(trade)
+    return trade
+
+
+@router.patch("/{trade_id}/price", response_model=TradeRead)
+def update_price(
+    trade_id: int,
+    payload: TradePriceUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    trade = db.query(Trade).filter(Trade.id == trade_id, Trade.user_id == current_user.id).first()
+    if not trade:
+        raise HTTPException(status_code=404, detail="Trade não encontrado")
+    trade.current_price = payload.current_price
+    trade.current_price_updated_at = datetime.datetime.utcnow()
     db.commit()
     db.refresh(trade)
     return trade

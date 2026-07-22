@@ -128,6 +128,24 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
             alerts.append(RiskAlert(severity="alerta", message=f"Risco na classe '{item.key}' (R$ {item.risco_atual:,.0f}) acima do limite por classe (R$ {item.limite:,.0f})."))
 
     for t in open_trades:
+        if t.stop_alert == "atingido":
+            alerts.append(
+                RiskAlert(
+                    severity="stop",
+                    message=f"{t.asset}: preço atual (R$ {t.current_price:,.2f}) já cruzou o stop (R$ {t.stop_price:,.2f}).",
+                    trade_id=t.id,
+                )
+            )
+        elif t.stop_alert == "perto":
+            alerts.append(
+                RiskAlert(
+                    severity="alerta",
+                    message=f"{t.asset}: preço atual (R$ {t.current_price:,.2f}) está próximo do stop (R$ {t.stop_price:,.2f}).",
+                    trade_id=t.id,
+                )
+            )
+
+    for t in open_trades:
         if t.conviction and t.stop_price is not None:
             tier = tiers.get(t.conviction)
             if tier:
@@ -138,6 +156,7 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
                         RiskAlert(
                             severity="alerta",
                             message=f"{t.asset}: risco de R$ {risco_atual:,.0f} excede o máximo para convicção '{t.conviction}' (R$ {risco_permitido:,.0f}).",
+                            trade_id=t.id,
                         )
                     )
 
