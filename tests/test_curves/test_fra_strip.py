@@ -3,7 +3,14 @@ from datetime import date
 from emrates.conventions.compounding import Compounding
 from emrates.conventions.daycount import DayCount
 from emrates.curves.base import Pillar, ParSwapCurveBuilder
-from emrates.curves.fra_strip import best_chain_start, chain_from, extend_with_fra_strip, month_offset, parse_fra_period
+from emrates.curves.fra_strip import (
+    best_chain_start,
+    bootstrap_fra_chain,
+    chain_from,
+    extend_with_fra_strip,
+    month_offset,
+    parse_fra_period,
+)
 from emrates.data.calendars import Calendar
 
 
@@ -50,6 +57,29 @@ def test_best_chain_start_caps_at_the_swap_curve_anchor():
     start, chain = best_chain_start(periods, cap_month=12)
     assert start == 3
     assert chain[-1][1] == 12  # reaches exactly the swap curve's anchor, doesn't overshoot
+
+
+def test_bootstrap_fra_chain_uses_modified_following_not_plain_following():
+    # Bloomberg has no stored start/end date for these FRA tickers at all —
+    # they're quoted relative to "today's spot", recomputed daily, so
+    # there's nothing to fetch (confirmed: every candidate date field came
+    # back NaN except SETTLE_DT, which is just the spot date itself,
+    # identical across every ticker). Reconstructing the date ourselves via
+    # month_offset + business-day roll is therefore the only option — but
+    # the roll convention matters. IRS/FRA market convention is Modified
+    # Following (roll forward, unless that crosses into the next month, in
+    # which case roll backward instead) — plain Following can cross into
+    # the next calendar month and land on a date the FRA period was never
+    # meant to reach. Concrete case: spot 2025-11-28 + 3 months lands on
+    # 2026-02-28 (Saturday); plain Following pushes to 2026-03-02, Modified
+    # Following correctly stays in February at 2026-02-27.
+    calendar = Calendar("test", holidays=set())
+    spot = date(2025, 11, 28)
+
+    results = bootstrap_fra_chain(spot, spot, anchor_df=1.0, anchor_months_from_spot=0, fra_chain=[(0, 3, 0.03)], calendar=calendar)
+    end_date, _ = results[0]
+    assert end_date == date(2026, 2, 27)
+    assert end_date.month == 2  # stays in February, doesn't cross into March
 
 
 def test_extend_with_fra_strip_fills_short_end_and_matches_swap_pillars():

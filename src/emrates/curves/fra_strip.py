@@ -9,6 +9,20 @@ FRA rates are simple/linear money-market rates over [start, end] measured
 from spot (T+2), not zero rates from valuation_date, so they chain off
 each other's discount factor rather than off valuation_date directly:
 DF(end) = DF(start) / (1 + rate * tau(start, end)).
+
+Dates are reconstructed here (month_offset + business-day roll), not read
+from Bloomberg — checked via scripts/inspect_fra_fields.py (22/07/2026):
+every candidate date field (END_ACCRUAL_DT, FLT_START_DT/FLT_END_DT,
+FWD_START_DATE/FWD_END_DATE, START_ACCRUAL_DT, FIRST_SETTLE_DT, ...) comes
+back NaN for these tickers, and the one field that IS populated,
+SETTLE_DT, is identical (the spot date itself) across every single FRA —
+these "CMPN Curncy" tickers are quoted relative to *today's* spot,
+recomputed daily, so Bloomberg has no fixed date to store for them. The
+business-day roll uses Modified Following (adjust_modified_following, not
+plain adjust_following) — the standard IRS/FRA market convention: roll
+forward, unless that crosses into the next calendar month, in which case
+roll backward instead. Plain Following can push a period boundary into a
+month the FRA was never meant to reach.
 """
 from __future__ import annotations
 
@@ -99,7 +113,7 @@ def bootstrap_fra_chain(
     for start_month, end_month, rate in fra_chain:
         if start_month != current_month:
             raise ValueError(f"FRA chain gap: expected period starting at month {current_month}, got {start_month}")
-        end_date = calendar.adjust_following(month_offset(spot_date, end_month))
+        end_date = calendar.adjust_modified_following(month_offset(spot_date, end_month))
         tau = year_fraction(current_date, end_date, DayCount.ACT_360, calendar)
         end_df = current_df / (1.0 + rate * tau)
         results.append((end_date, end_df))
@@ -130,7 +144,7 @@ def extend_with_fra_strip(
     if short_start is None:
         short_chain = []
     else:
-        short_anchor_date = calendar.adjust_following(month_offset(spot_date, short_start))
+        short_anchor_date = calendar.adjust_modified_following(month_offset(spot_date, short_start))
         short_anchor_tau = year_fraction(valuation_date, short_anchor_date, DayCount.ACT_360, calendar)
         short_anchor_df = _df_from_rate(policy_rate, short_anchor_tau, Compounding.EXPONENTIAL)
         short_chain = bootstrap_fra_chain(

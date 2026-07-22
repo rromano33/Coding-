@@ -16,7 +16,7 @@ def _date_at_months(months: float) -> date:
     # only for the fractional-month case (a meeting strictly between two FRA
     # end-months), where there's no "exact" answer to match anyway.
     if months == int(months):
-        return CALENDAR.adjust_following(month_offset(SPOT, int(months)))
+        return CALENDAR.adjust_modified_following(month_offset(SPOT, int(months)))
     return SPOT + timedelta(days=months * 30.4368)
 
 
@@ -29,7 +29,7 @@ def test_reproduces_the_real_czech_reference_table_bps_for_bps():
     outright_pct = {4: 3.97, 5: 4.05, 6: 4.11, 7: 4.21, 8: 4.32, 9: 4.39, 10: 4.43, 11: 4.47, 12: 4.49}
     fra_data = [(m - 3, m, r / 100.0) for m, r in outright_pct.items()]  # (start,end,rate) tuples like real tickers
 
-    meeting_dates = [CALENDAR.adjust_following(month_offset(SPOT, m)) for m in sorted(outright_pct)]
+    meeting_dates = [CALENDAR.adjust_modified_following(month_offset(SPOT, m)) for m in sorted(outright_pct)]
     results = fra_priced_path(SPOT, ref_rate, fra_data, meeting_dates, CALENDAR)
 
     their_cumulative_bps = {4: 11.8, 5: 19.8, 6: 25.8, 7: 35.8, 8: 47.0, 9: 54.3, 10: 58.0, 11: 62.0, 12: 64.0}
@@ -84,6 +84,6 @@ def test_fra_point_positioned_at_its_real_calendar_date_not_a_month_average():
     # though a 30.4368*N-day approximation would place it a few days off.
     ref_rate = 0.05
     fra_data = [(1, 9, 0.06)]  # a FRA ending 9 calendar-months from spot
-    real_end_date = CALENDAR.adjust_following(month_offset(SPOT, 9))
+    real_end_date = CALENDAR.adjust_modified_following(month_offset(SPOT, 9))
     results = fra_priced_path(SPOT, ref_rate, fra_data, [real_end_date], CALENDAR)
     assert results[0].level_after_bps == pytest.approx(0.06 * 1e4, abs=1e-6)

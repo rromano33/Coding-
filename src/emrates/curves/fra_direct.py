@@ -63,7 +63,7 @@ def fra_priced_path(
     the previous meeting's (or ref_rate, for the first meeting). No extra
     trailing meeting needed — every date passed in gets its own row."""
     points = sorted({(end, rate) for _, end, rate in fra_data})
-    xs = [0] + [(calendar.adjust_following(month_offset(spot_date, end)) - spot_date).days for end, _ in points]
+    xs = [0] + [(calendar.adjust_modified_following(month_offset(spot_date, end)) - spot_date).days for end, _ in points]
     ys = [ref_rate] + [rate for _, rate in points]
 
     def level_at(days_from_spot: int) -> float:
