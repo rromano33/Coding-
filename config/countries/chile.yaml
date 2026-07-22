@@ -7,10 +7,11 @@ reference_instrument: "Swap Promedio Cámara (SPC) — CLP nominal ou UF"
 floating_index: "ICP (Índice de Cámara Promedio), sobre a TCIP"
 index_type: overnight_compounded
 
-pillar_type: zero_rate             # bullet até 18 meses — VERIFICAR frequência de cupom acima de 18m
+pillar_type: hybrid_bullet_then_coupon   # bullet até 18 meses, depois par swap com cupom semestral — confirmado via Bloomberg DES (CHSWP5, 22/07/2026)
 day_count: ACT/360
 compounding: exponential
-coupon_frequency_months: null      # válido para prazos <=18m; para >18m ver nota abaixo
+coupon_frequency_months: 6         # CHSWP5 (5Y): SemiAnnual nas duas pernas — Bloomberg DES 22/07/2026
+bullet_cutoff_months: 18
 fixing_lag_days: 0                 # TCIP/ICP do dia publicada pela ABIF até as 20h do próprio dia útil
 
 benchmark_transition: null
@@ -36,6 +37,6 @@ sources:
   - "day_count ACT/360 reconfirmado 21/07/2026 (BCCh working paper + LatAmSEF product certification)"
 
 notes:
-  - "VERIFICAR: para swaps SPC acima de 18 meses as fontes sugerem pagamento periódico (possivelmente semestral), não bullet — se o book tiver posições >18m, mudar pillar_type para par_swap e confirmar a frequência antes de confiar no PnL."
+  - "CONFIRMADO 22/07/2026 via Bloomberg DES (tela do CHSWP5, 5Y): pernas fixa e flutuante SemiAnnual, ACT/360, Modified Following, EOM backward, desconto OIS. pillar_type mudado de zero_rate para hybrid_bullet_then_coupon: bullet (zero rate) até 18 meses, par swap bootstrap com cupom semestral a partir daí (HybridCurveBuilder em curves/base.py)."
   - "SPC-UF (indexado à inflação) é uma curva separada, fora do escopo desta config (que cobre só o nominal SPC-CLP)."
-  - "Tickers confirmados vão até 10Y (2036) — a maior parte do horizonte da curva está na zona >18m onde a frequência de cupom ainda não está confirmada. Tratando como zero_rate/bullet por ora; revisar se o book tiver posições longas."
+  - "Tickers confirmados vão até 10Y (2036) — a maior parte do horizonte da curva está na zona >18m, agora tratada como par swap semestral em vez de bullet."

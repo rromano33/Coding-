@@ -180,6 +180,76 @@ class ZeroRateCurveBuilder:
         )
 
 
+def _bootstrap_coupon_pillars(
+    valuation_date: date,
+    pillars: list[Pillar],
+    convention: DayCount,
+    compounding: Compounding,
+    coupon_frequency_months: int,
+    calendar: Calendar | None,
+    curve_dates: list[date],
+    curve_dfs: list[float],
+) -> None:
+    """Solves each pillar's discount factor by a secant iteration rather than a
+    single closed-form step: when a pillar spans more than one coupon period past
+    the previously bootstrapped pillar, the intermediate coupon dates fall between
+    the *candidate* new pillar and the last known one, so their interpolated
+    discount factors depend on the very df being solved for. A one-shot closed
+    form (using only prior pillars to interpolate those intermediate dates) is a
+    few bps off; iterating against the trial curve that includes the candidate
+    pillar removes that self-consistency error.
+
+    curve_dates/curve_dfs are mutated in place, appending each bootstrapped
+    pillar — pass them pre-seeded with any already-known pillars (e.g. a
+    bullet short end bootstrapped separately) so the fixed-leg schedule's
+    intermediate coupon dates can interpolate against those too.
+    """
+
+    def par_residual(p: Pillar, schedule: list[date], df_candidate: float) -> float:
+        trial = DiscountCurve(
+            valuation_date,
+            curve_dates + [p.maturity],
+            curve_dfs + [df_candidate],
+            convention,
+            compounding,
+            calendar,
+        )
+        prior = [valuation_date] + schedule[:-1]
+        fixed_leg = sum(trial.tau(a, b) * trial.discount_factor(b) for a, b in zip(prior, schedule))
+        floating_leg = 1.0 - df_candidate
+        return p.rate * fixed_leg - floating_leg
+
+    for p in sorted(pillars, key=lambda p: p.maturity):
+        schedule = generate_schedule(valuation_date, p.maturity, coupon_frequency_months, calendar)
+
+        # closed-form estimate (exact when the pillar spans a single coupon
+        # period past the last bootstrapped one) seeds the secant iteration
+        prior_dates = schedule[:-1]
+        taus = [
+            year_fraction(prior_dates[i - 1] if i > 0 else valuation_date, prior_dates[i], convention, calendar)
+            for i in range(len(prior_dates))
+        ]
+        last_known_df = curve_dfs[-1] if curve_dfs else 1.0
+        s = sum(tau * last_known_df for tau in taus)  # crude seed, refined below
+        tau_last = year_fraction(prior_dates[-1] if prior_dates else valuation_date, p.maturity, convention, calendar)
+        df0 = (1.0 - p.rate * s) / (1.0 + p.rate * tau_last)
+        df1 = df0 * 1.0001
+
+        f0, f1 = par_residual(p, schedule, df0), par_residual(p, schedule, df1)
+        for _ in range(50):
+            if f1 == f0:
+                break
+            df_next = df1 - f1 * (df1 - df0) / (f1 - f0)
+            df0, f0 = df1, f1
+            df1 = df_next
+            f1 = par_residual(p, schedule, df1)
+            if abs(f1) < 1e-14:
+                break
+
+        curve_dates.append(p.maturity)
+        curve_dfs.append(df1)
+
+
 class ParSwapCurveBuilder:
     """Bootstraps a par-swap curve with periodic fixed-leg coupons.
 
@@ -202,70 +272,63 @@ class ParSwapCurveBuilder:
         self.coupon_frequency_months = coupon_frequency_months
         self.calendar = calendar
 
-    def _schedule(self, valuation_date: date, maturity: date) -> list[date]:
-        return generate_schedule(valuation_date, maturity, self.coupon_frequency_months, self.calendar)
-
     def build(self, valuation_date: date, pillars: list[Pillar]) -> DiscountCurve:
-        """Solves each pillar's discount factor by a secant iteration rather than a
-        single closed-form step: when a pillar spans more than one coupon period past
-        the previously bootstrapped pillar, the intermediate coupon dates fall between
-        the *candidate* new pillar and the last known one, so their interpolated
-        discount factors depend on the very df being solved for. A one-shot closed
-        form (using only prior pillars to interpolate those intermediate dates) is a
-        few bps off; iterating against the trial curve that includes the candidate
-        pillar removes that self-consistency error.
-        """
-        pillars = sorted(pillars, key=lambda p: p.maturity)
         curve_dates: list[date] = []
         curve_dfs: list[float] = []
+        _bootstrap_coupon_pillars(
+            valuation_date, pillars, self.convention, self.compounding,
+            self.coupon_frequency_months, self.calendar, curve_dates, curve_dfs,
+        )
+        return DiscountCurve(
+            valuation_date, curve_dates, curve_dfs, self.convention, self.compounding, self.calendar
+        )
 
-        def par_residual(p: Pillar, schedule: list[date], df_candidate: float) -> float:
-            trial = DiscountCurve(
-                valuation_date,
-                curve_dates + [p.maturity],
-                curve_dfs + [df_candidate],
-                self.convention,
-                self.compounding,
-                self.calendar,
-            )
-            prior = [valuation_date] + schedule[:-1]
-            fixed_leg = sum(trial.tau(a, b) * trial.discount_factor(b) for a, b in zip(prior, schedule))
-            floating_leg = 1.0 - df_candidate
-            return p.rate * fixed_leg - floating_leg
 
-        for p in pillars:
-            schedule = self._schedule(valuation_date, p.maturity)
+class HybridCurveBuilder:
+    """Bullet (zero-rate) pillars out to bullet_cutoff_months, then a
+    periodic-coupon par-swap bootstrap beyond it — Chile (SPC) and Colombia
+    (IBR) both trade bullet out to 18 months, then switch to a periodic-
+    coupon swap for 2Y+ (confirmed via Bloomberg DES — CHSWP5: SemiAnnual
+    both legs; CLSWIB5: Quarterly both legs, float leg resets daily/
+    compounded but pays quarterly — 22/07/2026)."""
 
-            # closed-form estimate (exact when the pillar spans a single coupon
-            # period past the last bootstrapped one) seeds the secant iteration
-            prior_dates = schedule[:-1]
-            taus = [
-                year_fraction(
-                    prior_dates[i - 1] if i > 0 else valuation_date, prior_dates[i], self.convention, self.calendar
-                )
-                for i in range(len(prior_dates))
-            ]
-            last_known_df = curve_dfs[-1] if curve_dfs else 1.0
-            s = sum(tau * last_known_df for tau in taus)  # crude seed, refined below
-            tau_last = year_fraction(
-                prior_dates[-1] if prior_dates else valuation_date, p.maturity, self.convention, self.calendar
-            )
-            df0 = (1.0 - p.rate * s) / (1.0 + p.rate * tau_last)
-            df1 = df0 * 1.0001
+    def __init__(
+        self,
+        convention: DayCount,
+        compounding: Compounding,
+        coupon_frequency_months: int,
+        bullet_cutoff_months: int,
+        calendar: Calendar | None = None,
+    ):
+        self.convention = convention
+        self.compounding = compounding
+        self.coupon_frequency_months = coupon_frequency_months
+        self.bullet_cutoff_months = bullet_cutoff_months
+        self.calendar = calendar
 
-            f0, f1 = par_residual(p, schedule, df0), par_residual(p, schedule, df1)
-            for _ in range(50):
-                if f1 == f0:
-                    break
-                df_next = df1 - f1 * (df1 - df0) / (f1 - f0)
-                df0, f0 = df1, f1
-                df1 = df_next
-                f1 = par_residual(p, schedule, df1)
-                if abs(f1) < 1e-14:
-                    break
+    def _cutoff_date(self, valuation_date: date) -> date:
+        total = valuation_date.month - 1 + self.bullet_cutoff_months
+        year = valuation_date.year + total // 12
+        month = total % 12 + 1
+        day = min(valuation_date.day, 28)
+        return date(year, month, day)
 
+    def build(self, valuation_date: date, pillars: list[Pillar]) -> DiscountCurve:
+        cutoff = self._cutoff_date(valuation_date)
+        bullet_pillars = [p for p in pillars if p.maturity <= cutoff]
+        coupon_pillars = [p for p in pillars if p.maturity > cutoff]
+
+        curve_dates: list[date] = []
+        curve_dfs: list[float] = []
+        for p in sorted(bullet_pillars, key=lambda p: p.maturity):
+            tau = year_fraction(valuation_date, p.maturity, self.convention, self.calendar)
             curve_dates.append(p.maturity)
-            curve_dfs.append(df1)
+            curve_dfs.append(discount_factor(p.rate, tau, self.compounding))
+
+        _bootstrap_coupon_pillars(
+            valuation_date, coupon_pillars, self.convention, self.compounding,
+            self.coupon_frequency_months, self.calendar, curve_dates, curve_dfs,
+        )
 
         return DiscountCurve(
             valuation_date, curve_dates, curve_dfs, self.convention, self.compounding, self.calendar

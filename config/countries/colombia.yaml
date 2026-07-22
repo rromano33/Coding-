@@ -7,10 +7,11 @@ reference_instrument: "Swap IBR (OIS)"
 floating_index: "IBR (Indicador Bancario de Referencia)"
 index_type: overnight_compounded
 
-pillar_type: zero_rate             # bullet para prazos curtos — VERIFICAR corte de prazo/frequência para tenores longos
+pillar_type: hybrid_bullet_then_coupon   # bullet até 18 meses, depois par swap com cupom trimestral — confirmado via Bloomberg DES (CLSWIB5, 22/07/2026)
 day_count: ACT/360
 compounding: exponential
-coupon_frequency_months: null
+coupon_frequency_months: 3         # CLSWIB5 (5Y): Quarterly nas duas pernas (perna flutuante refixa Daily via IBR mas paga Quarterly) — Bloomberg DES 22/07/2026
+bullet_cutoff_months: 18
 fixing_lag_days: 1                 # IBR overnight fixado/leiloado em D às ~11h, mas vigora para o dia seguinte (t+1)
 min_pillar_tenor_days: 45           # exclui CLSWIBA (~1M): liquidez considerada baixa demais pra confiar (Ricardo, 22/07/2026)
 
@@ -37,5 +38,5 @@ sources:
 
 notes:
   - "Particularidade de fixing: a taxa IBR publicada no dia D é para vigência em D+1 — atenção ao alinhar isso no motor de acumulação (calendars.py / bootstrap), diferente de Brasil/Chile onde a taxa do dia vale para o próprio dia."
-  - "VERIFICAR: frequência de cupom para tenores mais longos (1Y+) — fontes públicas não confirmaram o corte exato entre bullet e periódico."
-  - "22/07/2026: Colômbia não tem FRA de IBR na planilha (confirmado com o Ricardo) — sem alternativa granular tipo Czech/Poland/Hungary. priced_bc usa strip_meeting_path_from_pillars (lê os pilares reais do swap direto, sem NSS) em vez do caminho smoothed — ver run_daily_pricing.py e central_banks/stripper.py."
+  - "CONFIRMADO 22/07/2026 via Bloomberg DES (tela do CLSWIB5, 5Y): pernas fixa e flutuante Quarterly, ACT/360, Modified Following, EOM backward, perna flutuante refixa Daily (IBR) mas paga Quarterly, desconto OIS. pillar_type mudado de zero_rate para hybrid_bullet_then_coupon: bullet (zero rate) até 18 meses, par swap bootstrap com cupom trimestral a partir daí (HybridCurveBuilder em curves/base.py)."
+  - "22/07/2026: Colômbia não tem FRA de IBR na planilha (confirmado com o Ricardo) — sem alternativa granular tipo Czech/Poland/Hungary. priced_bc usa strip_meeting_path_from_pillars (lê os pilares reais do swap direto — agora vindo da curva híbrida acima — sem NSS) em vez do caminho smoothed — ver run_daily_pricing.py e central_banks/stripper.py."

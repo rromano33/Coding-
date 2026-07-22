@@ -7,7 +7,7 @@ import yaml
 
 from emrates.conventions.compounding import Compounding
 from emrates.conventions.daycount import DayCount
-from emrates.curves.base import ParSwapCurveBuilder, ZeroRateCurveBuilder
+from emrates.curves.base import HybridCurveBuilder, ParSwapCurveBuilder, ZeroRateCurveBuilder
 from emrates.data.calendars import Calendar
 
 
@@ -26,5 +26,13 @@ def build_curve_builder(country_config: dict, calendar: Calendar | None = None):
     if country_config["pillar_type"] == "par_swap":
         return ParSwapCurveBuilder(
             convention, compounding, country_config["coupon_frequency_months"], calendar
+        )
+    if country_config["pillar_type"] == "hybrid_bullet_then_coupon":
+        return HybridCurveBuilder(
+            convention,
+            compounding,
+            country_config["coupon_frequency_months"],
+            country_config["bullet_cutoff_months"],
+            calendar,
         )
     raise ValueError(f"unknown pillar_type: {country_config['pillar_type']}")
