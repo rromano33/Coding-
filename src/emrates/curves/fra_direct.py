@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from emrates.central_banks.segment_split import split_segment_change
 from emrates.central_banks.stripper import MeetingPricing
 from emrates.curves.fra_strip import month_offset
 from emrates.data.calendars import Calendar
@@ -74,7 +75,18 @@ def fra_priced_path(
     one on already has this covered for free — a rolling monthly strip's end
     months (4,5,6,7,...) are consecutive, so linear interpolation between
     them barely stretches past adjacent real data. Only the gap before the
-    very first quote lacks a second point to pin it down."""
+    very first quote lacks a second point to pin it down.
+
+    That gap — spot to the first anchor — is still only ONE real number
+    (the first FRA's rate) describing however many meetings happen to fall
+    inside it, the same underlying situation as
+    central_banks.stripper.strip_meeting_path_from_pillars's pillar
+    segments. So instead of smearing it linearly across calendar days,
+    meetings in that gap get the same explicit 65/35 front-loaded split
+    (Ricardo, 22/07/2026: applies to every country, not just Colombia — see
+    segment_split.py). Every later gap sits between two distinct real FRA
+    quotes, so linear interpolation there is reading real data, not
+    guessing — left as-is."""
     points = sorted({(end, rate) for _, end, rate in fra_data})
     xs = [0] + [(calendar.adjust_modified_following(month_offset(spot_date, end)) - spot_date).days for end, _ in points]
     ys = [ref_rate] + [rate for _, rate in points]
@@ -99,10 +111,40 @@ def fra_priced_path(
         return ys[-1]
 
     meeting_dates = sorted(meeting_dates)
+
+    # xs[1]/ys[1] is the first point past spot -- either the inserted
+    # first-FRA-start anchor or (if there was no room for one) the first
+    # FRA's own end month. Either way, only one real number (the first
+    # FRA's rate) governs everything between spot and it.
+    boundary_days = xs[1] if len(xs) > 1 else None
+    boundary_level = ys[1] if len(xs) > 1 else None
+
+    pre_meetings = [
+        m for m in meeting_dates if boundary_days is not None and (m - spot_date).days <= boundary_days
+    ]
+    post_meetings = [m for m in meeting_dates if m not in pre_meetings]
+
     results = []
     prev_level = ref_rate
     cumulative = 0.0
-    for meeting_date in meeting_dates:
+
+    if pre_meetings:
+        total_change_bps = (boundary_level - ref_rate) * 1e4
+        for meeting_date, change_bps in zip(pre_meetings, split_segment_change(total_change_bps, len(pre_meetings))):
+            level = prev_level + change_bps / 1e4
+            cumulative += change_bps
+            results.append(
+                MeetingPricing(
+                    meeting_date=meeting_date,
+                    level_before_bps=prev_level * 1e4,
+                    level_after_bps=level * 1e4,
+                    implied_change_bps=change_bps,
+                    cumulative_change_from_spot_bps=cumulative,
+                )
+            )
+            prev_level = level
+
+    for meeting_date in post_meetings:
         level = level_at((meeting_date - spot_date).days)
         change_bps = (level - prev_level) * 1e4
         cumulative += change_bps

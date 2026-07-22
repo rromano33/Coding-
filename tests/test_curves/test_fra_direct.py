@@ -92,6 +92,24 @@ def test_short_term_meetings_read_close_to_the_first_fra_not_smeared_toward_it()
         assert r.cumulative_change_from_spot_bps == pytest.approx(-11.0, abs=1.0)
 
 
+def test_multiple_meetings_before_first_fra_start_get_65_35_split():
+    # Two BC meetings both fall before the first FRA's own start month (1M
+    # out) -- only one real number (the first FRA's rate) describes that
+    # whole gap, same situation as a pillar segment in
+    # strip_meeting_path_from_pillars. Ricardo confirmed 22/07/2026 the
+    # 65/35 front-loaded split applies here too, not just Colombia.
+    ref_rate = 0.05
+    fra_data = [(1, 4, 0.06)]
+    meeting_a = _date_at_months(0.3)
+    meeting_b = _date_at_months(0.7)
+    results = fra_priced_path(SPOT, ref_rate, fra_data, [meeting_a, meeting_b], CALENDAR)
+    assert len(results) == 2
+    total = results[0].implied_change_bps + results[1].implied_change_bps
+    assert results[0].implied_change_bps == pytest.approx(total * 0.65, rel=1e-6)
+    assert results[1].implied_change_bps == pytest.approx(total * 0.35, rel=1e-6)
+    assert results[0].implied_change_bps > results[1].implied_change_bps > 0
+
+
 def test_fra_point_positioned_at_its_real_calendar_date_not_a_month_average():
     # A FRA end-month is calendar-month arithmetic (same day-of-month, N
     # months later — see fra_strip.month_offset), not a fixed 30.4368-day
