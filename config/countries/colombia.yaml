@@ -12,6 +12,7 @@ day_count: ACT/360
 compounding: exponential
 coupon_frequency_months: null
 fixing_lag_days: 1                 # IBR overnight fixado/leiloado em D às ~11h, mas vigora para o dia seguinte (t+1)
+min_pillar_tenor_days: 45           # exclui CLSWIBA (~1M): liquidez considerada baixa demais pra confiar (Ricardo, 22/07/2026)
 
 benchmark_transition: null         # IBR vigente desde 2008, sem descontinuação identificada
 
@@ -37,3 +38,4 @@ sources:
 notes:
   - "Particularidade de fixing: a taxa IBR publicada no dia D é para vigência em D+1 — atenção ao alinhar isso no motor de acumulação (calendars.py / bootstrap), diferente de Brasil/Chile onde a taxa do dia vale para o próprio dia."
   - "VERIFICAR: frequência de cupom para tenores mais longos (1Y+) — fontes públicas não confirmaram o corte exato entre bullet e periódico."
+  - "22/07/2026: Colômbia não tem FRA de IBR na planilha (confirmado com o Ricardo) — sem alternativa granular tipo Czech/Poland/Hungary. priced_bc usa strip_meeting_path_from_pillars (lê os pilares reais do swap direto, sem NSS) em vez do caminho smoothed — ver run_daily_pricing.py e central_banks/stripper.py."

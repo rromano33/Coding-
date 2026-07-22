@@ -17,6 +17,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from emrates.central_banks.meeting_dates import upcoming_meetings
+from emrates.central_banks.stripper import strip_meeting_path_from_pillars
 from emrates.curves.base import Pillar
 from emrates.curves.factory import build_curve_builder, load_country_config
 from emrates.curves.fra_direct import fra_priced_path
@@ -34,6 +35,13 @@ COUNTRIES = ["brazil", "mexico", "chile", "colombia", "south_africa", "poland", 
 # Czech/Poland/Hungary's Tickers rows mix FRA tickers (xxFR..., short end,
 # handled separately via fra_strip.py) with swap tickers (xxSW..., 1Y+).
 FRA_STRIP_COUNTRIES = {"czech", "poland", "hungary"}
+
+# No FRA strip available (confirmed 22/07/2026) and the swap curve's own
+# pillars run sparser than the BC's meeting calendar beyond ~18 months —
+# priced_bc reads real pillars directly with an explicit 65/35 split across
+# multi-meeting segments instead of NSS (see central_banks/stripper.py's
+# strip_meeting_path_from_pillars docstring).
+PILLAR_SPLIT_COUNTRIES = {"colombia"}
 
 
 def resolve_maturities(bbg: BbgClient, country: str, curve_tickers: list, calendar) -> list:
@@ -90,11 +98,15 @@ def main() -> None:
         prices = bbg.last_prices([policy_ticker.ticker] + [t.ticker for t in curve_tickers] + [t.ticker for t in fra_tickers])
         current_policy_rate = prices[policy_ticker.ticker] / 100.0
 
+        min_pillar_tenor_days = cfg.get("min_pillar_tenor_days", 0)
         pillars = []
         for t, maturity in zip(curve_tickers, pillars_maturities):
             rate = prices[t.ticker] / 100.0
             if pd.isna(rate):
                 print(f"[{country}] pulei {t.ticker}: preço veio NaN da Bloomberg (sem cotação nesse ponto?).")
+                continue
+            if (maturity - valuation_date).days < min_pillar_tenor_days:
+                print(f"[{country}] pulei {t.ticker}: tenor abaixo de min_pillar_tenor_days ({min_pillar_tenor_days}d) — liquidez considerada baixa demais.")
                 continue
             pillars.append(Pillar(maturity=maturity, rate=rate))
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
@@ -150,6 +162,16 @@ def main() -> None:
             all_future_meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date)
             meetings = [m for m in all_future_meetings if m <= fra_horizon_date]
             results = fra_priced_path(spot_date, current_policy_rate, fra_data, meetings, calendar)
+            report = meeting_pricing_to_dataframe(results)
+        elif country in PILLAR_SPLIT_COUNTRIES:
+            # No FRA strip and no NSS — read the exact curve's own real
+            # pillars directly (curve.forward_rate between two actual market
+            # dates only, never an interpolated in-between point) and split
+            # each segment's implied change across whichever meetings share
+            # it (65/35, front-loaded — see stripper.py). No trailing extra
+            # meeting needed, unlike strip_meeting_path.
+            meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon)
+            results = strip_meeting_path_from_pillars(curve, curve.pillar_dates, meetings, current_policy_rate)
             report = meeting_pricing_to_dataframe(results)
         else:
             # +1: strip_meeting_path needs one meeting past the horizon to read the
