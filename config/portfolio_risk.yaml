@@ -1,6 +1,5 @@
 paths:
   portfolio_xlsx: "Data/Portfolio.xlsx"   # confirmado 23/07/2026: fica direto em Data/, não Data/raw/
-  bbg_cache_dir: "Data/raw"
   output_dir: "Data/processed"
 
 # Confirmado pela planilha real (22/07/2026): aba "Summary" com colunas
@@ -23,6 +22,17 @@ columns:
   position_type: "Tipo"
   position_value: "Posição"
 
+# Histórico de preços/taxas: lido direto da aba "Preços" (confirmado
+# 23/07/2026), preenchida no Excel via =BDH(...) da Bloomberg -- não
+# depende de sessão Bloomberg em Python (BBComm/xbbg), que se mostrou
+# instável. "ticker_row_label" é o rótulo na coluna A que identifica a
+# linha com os tickers BBG (mesma string usada em columns.ticker acima,
+# pra casar posição com histórico). Células "#N/A N/A" (sem cotação
+# naquele dia) são descartadas automaticamente -- ver price_history.py.
+price_history:
+  sheet: "Preços"
+  ticker_row_label: "BBG"
+
 # Janelas de estimação (lookback) em dias úteis — não é o horizonte do VaR
 # em si (que continua sendo 1 dia), é quantos dias de histórico entram na
 # amostra usada pra estimar vol/VaR. ~21 dias úteis/mês.
@@ -33,9 +43,5 @@ lookback_windows:
 confidence_levels: [0.95]
 
 trading_days_per_year: 252
-
-# Quantos dias corridos pedir pra trás na Bloomberg pra garantir que sobrem
-# 252+1 observações válidas dentro da janela de 12M mesmo com feriados.
-history_buffer_calendar_days: 500
 
 base_currency: "USD"   # só usado como rótulo no relatório HTML

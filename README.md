@@ -68,24 +68,31 @@ python scripts/run_pnl.py             # compara com a curva do dia anterior salv
 ## VaR e vol de portfólio (`riskvar/`)
 
 Projeto separado dentro do mesmo repo: lê uma planilha de posições
-(ativo, ticker BBG, tipo Notional/DV01, valor da posição — ver
-`config/portfolio_risk.yaml`), busca o histórico de PX_LAST na Bloomberg e
-calcula VaR (histórico e paramétrico, 95% de confiança) e vol do
-portfólio, usando janelas de estimação de 3M (63 dias úteis) e 12M (252
-dias úteis). O VaR em si é sempre de 1 dia — o que muda entre as janelas é
-quanto histórico entra na amostra, não o horizonte projetado.
+(ativo, ticker BBG, tipo Notional/DV01, valor da posição — aba "Summary")
+e o histórico diário de preços/taxas de outra aba da mesma planilha
+("Preços", preenchida no Excel via `=BDH(...)` da própria Bloomberg — ver
+`config/portfolio_risk.yaml`), e calcula VaR (histórico e paramétrico,
+95% de confiança) e vol do portfólio, usando janelas de estimação de 3M
+(63 dias úteis) e 12M (252 dias úteis). O VaR em si é sempre de 1 dia — o
+que muda entre as janelas é quanto histórico entra na amostra, não o
+horizonte projetado.
+
+Não depende de sessão Bloomberg em Python (BBComm/xbbg) — só lê a
+planilha. Células `#N/A N/A` (sem cotação naquele dia) são descartadas
+automaticamente por ativo.
 
 ```bash
 python scripts/run_var.py             # gera Data/processed/var_report_<data>.csv e .html
 ```
 
 Ajuste `config/portfolio_risk.yaml` com o caminho real da sua planilha e
-os nomes das colunas/aba antes de rodar (já vem configurado com o layout
-confirmado: aba "Summary", colunas Classe | Ativo | BBG | Tipo | Posição —
-ajuste se a sua planilha for diferente). Convenção de sinal do DV01: valor
-da posição para uma **alta** de 1bp na taxa (mesma convenção de
-`emrates.portfolio.risk.dv01`) — se a posição ganha quando a taxa sobe
-(ex: pagador em swap), o DV01 informado deve ser positivo.
+os nomes das colunas/abas antes de rodar (já vem configurado com o
+layout confirmado: aba "Summary" com Classe | Ativo | BBG | Tipo |
+Posição, aba "Preços" com Classe/Ativo/BBG nas linhas e uma data por
+linha depois — ajuste se a sua planilha for diferente). Convenção de
+sinal do DV01: valor da posição para uma **alta** de 1bp na taxa (mesma
+convenção de `emrates.portfolio.risk.dv01`) — se a posição ganha quando a
+taxa sobe (ex: pagador em swap), o DV01 informado deve ser positivo.
 
 Além do CSV, o script gera um relatório HTML autocontido (abre offline, em
 qualquer navegador, sem precisar de internet) com os números principais em
