@@ -17,6 +17,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from emrates.data.bbg_client import BbgClient
+from riskvar.html_report import render_report_html, save_standalone_html
 from riskvar.loader import PortfolioLoader
 from riskvar.pnl_series import portfolio_pnl_series
 from riskvar.report import build_risk_report
@@ -52,6 +53,22 @@ def main() -> None:
     out_path = output_dir / f"var_report_{end}.csv"
     report.to_csv(out_path, index=False)
     print(f"\nSalvo em {out_path}")
+
+    # janela de performance = a mais longa configurada (tipicamente "12M") --
+    # o gráfico do HTML mostra o P&L acumulado ao longo dela.
+    performance_window = max(settings["lookback_windows"], key=settings["lookback_windows"].get)
+    performance_series = pnl_by_window[performance_window].cumsum()
+
+    html_content = render_report_html(
+        report,
+        performance_series,
+        valuation_date=end,
+        n_positions=len(positions),
+        base_currency=settings.get("base_currency", "USD"),
+    )
+    html_path = output_dir / f"var_report_{end}.html"
+    save_standalone_html(html_content, html_path)
+    print(f"Relatório HTML salvo em {html_path}")
 
 
 if __name__ == "__main__":

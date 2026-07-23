@@ -3,19 +3,25 @@ paths:
   bbg_cache_dir: "Data/raw"
   output_dir: "Data/processed"
 
-sheet: "Portfolio"   # nome da aba com as posições
+# Confirmado pela planilha real (22/07/2026): aba "Summary" com colunas
+# Classe | Ativo | BBG | Tipo | Posição. Ajuste "sheet" se o nome da aba
+# for outro na sua planilha.
+sheet: "Summary"
 
 # Uma linha por ativo. Tipo deve ser "Notional" ou "DV01" (case-insensitive):
-#   - Notional: Ticker aponta para um preço/nível (ação, FX, preço de bond,
-#     índice) e Posicao é o valor de mercado em $ da posição.
-#   - DV01: Ticker aponta para uma taxa/yield cotada em % (mesma convenção
-#     dos tickers de curva do projeto emrates) e Posicao é o DV01 em $/bp —
-#     ver o aviso de convenção de sinal em src/riskvar/pnl_series.py.
+#   - Notional: BBG aponta para um preço/nível (futuro, ação, FX, índice) e
+#     Posição é o valor de mercado em $ da posição (ex: ES1 Index, $10,000,000).
+#   - DV01: BBG aponta para uma taxa/yield cotada em % (mesma convenção dos
+#     tickers de curva do projeto emrates) e Posição é o DV01 em $/bp — ver
+#     o aviso de convenção de sinal em src/riskvar/pnl_series.py.
+# "asset_class" é opcional (usada só como rótulo, não entra na conta) — se a
+# sua planilha não tiver essa coluna, remova a linha abaixo sem problema.
 columns:
+  asset_class: "Classe"
   asset: "Ativo"
-  ticker: "Ticker"
+  ticker: "BBG"
   position_type: "Tipo"
-  position_value: "Posicao"
+  position_value: "Posição"
 
 # Janelas de estimação (lookback) em dias úteis — não é o horizonte do VaR
 # em si (que continua sendo 1 dia), é quantos dias de histórico entram na
@@ -31,3 +37,5 @@ trading_days_per_year: 252
 # Quantos dias corridos pedir pra trás na Bloomberg pra garantir que sobrem
 # 252+1 observações válidas dentro da janela de 12M mesmo com feriados.
 history_buffer_calendar_days: 500
+
+base_currency: "USD"   # só usado como rótulo no relatório HTML

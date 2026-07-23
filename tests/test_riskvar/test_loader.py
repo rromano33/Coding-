@@ -53,3 +53,46 @@ def test_raises_on_unrecognized_position_type(tmp_path):
 def test_raises_if_file_missing(tmp_path):
     with pytest.raises(FileNotFoundError):
         PortfolioLoader(tmp_path / "nope.xlsx", "Portfolio", COLUMN_MAP).load()
+
+
+def test_matches_headers_case_insensitively_and_ignoring_whitespace(tmp_path):
+    # Planilha real usa "BBG" e "Posição" (com espaço/acento) -- o config
+    # pode não bater exatamente com a caixa/acentuação real.
+    path = _write_xlsx(
+        tmp_path,
+        [{"ativo": "ES1", "bbg ": "ES1 Index", "TIPO": "Notional", " Posição": 10_000_000}],
+    )
+    column_map = {"asset": "Ativo", "ticker": "BBG", "position_type": "Tipo", "position_value": "Posição"}
+    positions = PortfolioLoader(path, "Portfolio", column_map).load()
+    assert len(positions) == 1
+    assert positions[0].ticker == "ES1 Index"
+    assert positions[0].position_value == 10_000_000
+
+
+def test_optional_asset_class_column_defaults_when_absent(tmp_path):
+    path = _write_xlsx(
+        tmp_path,
+        [{"Ativo": "ES1", "Ticker": "ES1 Index", "Tipo": "Notional", "Posicao": 10_000_000}],
+    )
+    positions = PortfolioLoader(path, "Portfolio", COLUMN_MAP).load()
+    assert positions[0].asset_class == "N/A"
+
+
+def test_optional_asset_class_column_read_when_configured(tmp_path):
+    path = _write_xlsx(
+        tmp_path,
+        [{"Classe": "Equity", "Ativo": "ES1", "Ticker": "ES1 Index", "Tipo": "Notional", "Posicao": 10_000_000}],
+    )
+    column_map = {**COLUMN_MAP, "asset_class": "Classe"}
+    positions = PortfolioLoader(path, "Portfolio", column_map).load()
+    assert positions[0].asset_class == "Equity"
+
+
+def test_raises_helpful_error_when_configured_column_missing(tmp_path):
+    path = _write_xlsx(
+        tmp_path,
+        [{"Ativo": "ES1", "Ticker": "ES1 Index", "Tipo": "Notional", "Posicao": 10_000_000}],
+    )
+    column_map = {**COLUMN_MAP, "position_value": "Posição não existe"}
+    with pytest.raises(KeyError, match="não encontrada"):
+        PortfolioLoader(path, "Portfolio", column_map).load()
