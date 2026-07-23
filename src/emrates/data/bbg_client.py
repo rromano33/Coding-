@@ -104,7 +104,17 @@ class BbgClient:
         end: date,
         field: str = "PX_LAST",
         use_cache: bool = True,
+        batch_size: int = 25,
     ) -> pd.DataFrame:
+        """Busca histórico diário via BDH, em lotes de `batch_size` tickers.
+
+        Pedir muitos tickers de uma vez (~150+) num único BDH de vários
+        meses é pesado o bastante pra derrubar a sessão do Terminal no meio
+        da consulta -- xbbg não levanta exceção nesse caso, só devolve um
+        DataFrame sem as colunas dos tickers afetados. Sem o lote, isso
+        derruba a consulta inteira (nenhum ticker volta); em lotes
+        menores, uma sessão instável só afeta o lote em andamento, e os
+        outros lotes ainda têm chance de completar."""
         cache_file = self.cache_dir / f"history_{field}_{start}_{end}.parquet"
         if use_cache and cache_file.exists():
             cached = pd.read_parquet(cache_file)
@@ -113,9 +123,27 @@ class BbgClient:
                 return cached[tickers]
 
         self._require_blp()
-        raw = blp.bdh(tickers=tickers, flds=[field], start_date=start, end_date=end)
-        df = raw.to_pandas() if hasattr(raw, "to_pandas") else raw
-        df.columns = df.columns.droplevel(1) if isinstance(df.columns, pd.MultiIndex) else df.columns
+
+        frames = []
+        for i in range(0, len(tickers), batch_size):
+            batch = tickers[i : i + batch_size]
+            raw = blp.bdh(tickers=batch, flds=[field], start_date=start, end_date=end)
+            batch_df = raw.to_pandas() if hasattr(raw, "to_pandas") else raw
+            batch_df.columns = (
+                batch_df.columns.droplevel(1) if isinstance(batch_df.columns, pd.MultiIndex) else batch_df.columns
+            )
+            if len(batch_df.columns) > 0:
+                frames.append(batch_df)
+
+        if not frames:
+            raise RuntimeError(
+                f"BDH não retornou histórico para NENHUM dos {len(tickers)} tickers pedidos. "
+                "Confira 'SessionConnectionDown'/'SessionTerminated' no terminal -- é bem provável que a "
+                "sessão do Bloomberg Terminal caiu no meio da consulta. Tente de novo com a sessão saudável "
+                "(e considere um `batch_size` menor se a lista de tickers for grande)."
+            )
+
+        df = pd.concat(frames, axis=1)
 
         if use_cache:
             df.to_parquet(cache_file)
