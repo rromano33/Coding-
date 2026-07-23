@@ -4,7 +4,12 @@ import pandas as pd
 import pytest
 
 from riskvar.loader import PortfolioPosition
-from riskvar.pnl_series import filter_positions_with_history, portfolio_pnl_series, position_pnl_series
+from riskvar.pnl_series import (
+    filter_positions_with_history,
+    portfolio_pnl_series,
+    position_pnl_series,
+    risk_contribution_pct,
+)
 
 
 def _series(values: list[float]) -> pd.Series:
@@ -72,3 +77,55 @@ def test_filter_positions_with_history_keeps_everything_when_all_tickers_present
     kept, missing = filter_positions_with_history([position], available_tickers=["X", "Y"])
     assert kept == [position]
     assert missing == []
+
+
+def _dv01_position_with_bps_path(asset, ticker, dv01, bps_changes):
+    # diff(yields)*100 == bps_changes exatamente, então o P&L da posição
+    # (dv01 * diff_bps) fica sob controle total do teste.
+    levels = [0.0]
+    for bps in bps_changes:
+        levels.append(levels[-1] + bps / 100.0)
+    position = PortfolioPosition(asset=asset, ticker=ticker, position_type="dv01", position_value=dv01)
+    return position, _series(levels)
+
+
+def test_risk_contribution_sums_to_100_and_is_positive_for_a_dominant_position():
+    dominant, dominant_prices = _dv01_position_with_bps_path("Dominante", "D", 1.0, [10, -10, 10, -10, 10, -8])
+    small, small_prices = _dv01_position_with_bps_path("Pequena", "S", 1.0, [1, -1, 2, -1, 1, -1])
+    positions = [dominant, small]
+    prices = {"D": dominant_prices, "S": small_prices}
+
+    contributions = risk_contribution_pct(positions, prices)
+
+    assert sum(contributions) == pytest.approx(100.0, abs=1e-6)
+    assert contributions[0] > contributions[1]
+
+
+def test_risk_contribution_is_negative_for_a_partial_hedge():
+    dominant, dominant_prices = _dv01_position_with_bps_path("Dominante", "D", 1.0, [10, -10, 10, -10, 10, -8])
+    # Se move majoritariamente contra a posição dominante -- reduz o risco
+    # do portfólio, não deveria "comer" uma fatia positiva do total.
+    hedge, hedge_prices = _dv01_position_with_bps_path("Hedge", "H", 1.0, [-4, 4, -4, 4, -4, 3])
+    positions = [dominant, hedge]
+    prices = {"D": dominant_prices, "H": hedge_prices}
+
+    contributions = risk_contribution_pct(positions, prices)
+
+    assert sum(contributions) == pytest.approx(100.0, abs=1e-6)
+    assert contributions[1] < 0
+    assert contributions[0] > 100.0  # o hedge "devolve" a diferença até fechar em 100%
+
+
+def test_risk_contribution_falls_back_to_equal_split_when_portfolio_has_zero_variance():
+    long_pos, long_prices = _dv01_position_with_bps_path("Comprado", "L", 1.0, [10, -10, 10, -10])
+    short_pos, short_prices = _dv01_position_with_bps_path("Vendido", "V", -1.0, [10, -10, 10, -10])
+    positions = [long_pos, short_pos]
+    prices = {"L": long_prices, "V": short_prices}
+
+    contributions = risk_contribution_pct(positions, prices)
+
+    assert contributions == [50.0, 50.0]
+
+
+def test_risk_contribution_empty_positions_returns_empty_list():
+    assert risk_contribution_pct([], {}) == []

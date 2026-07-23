@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from riskvar.html_report import render_report_html, save_standalone_html
 from riskvar.loader import PortfolioLoader
-from riskvar.pnl_series import filter_positions_with_history, portfolio_pnl_series
+from riskvar.pnl_series import filter_positions_with_history, portfolio_pnl_series, risk_contribution_pct
 from riskvar.price_history import load_price_history
 from riskvar.report import build_risk_report
 
@@ -52,9 +52,11 @@ def main() -> None:
 
     end = date.today()
     pnl_by_window = {}
+    contributions_by_window = {}
     for window_label, n_days in settings["lookback_windows"].items():
         price_histories = {p.ticker: price_histories_full[p.ticker].tail(n_days + 1) for p in positions}
         pnl_by_window[window_label] = portfolio_pnl_series(positions, price_histories).tail(n_days)
+        contributions_by_window[window_label] = risk_contribution_pct(positions, price_histories)
 
     report = build_risk_report(
         pnl_by_window, settings["confidence_levels"], settings["trading_days_per_year"]
@@ -78,6 +80,9 @@ def main() -> None:
         performance_series,
         valuation_date=end,
         n_positions=len(positions),
+        positions=positions,
+        contributions_by_window=contributions_by_window,
+        primary_window=performance_window,
         base_currency=settings.get("base_currency", "USD"),
     )
     html_path = output_dir / f"var_report_{end}.html"

@@ -1,22 +1,26 @@
-"""Gera o relatório HTML autocontido de risco de portfólio: tiles com os
-números principais, a tabela completa (mesma fonte que o CSV) e um gráfico
-de P&L acumulado dos últimos 12 meses.
+"""Gera o relatório HTML autocontido de risco de portfólio: uma tabela
+inicial com os ativos do portfólio (posição + contribuição ao risco),
+tiles com os números principais, a tabela completa (mesma fonte que o
+CSV) e um gráfico de P&L acumulado dos últimos 12 meses.
 
 Segue as convenções da skill de dataviz do projeto: paleta padrão (uma
 linha, azul), specs de marca (linha 2px, wash de área a ~10%, grid
 hairline, dot de 4px+anel), crosshair+tooltip em JS puro (sem CDN — o
 arquivo abre offline, sem internet) e uma vista em tabela como par de
-acessibilidade do gráfico. Nenhum texto vindo da planilha do usuário entra
-neste relatório (só números/datas calculados), então não há necessidade de
-escapar HTML aqui.
+acessibilidade do gráfico. A tabela de ativos usa texto vindo da planilha
+do usuário (nome do ativo, classe) -- sempre escapado via html.escape()
+antes de entrar no markup.
 """
 from __future__ import annotations
 
+import html
 import json
 import math
 from datetime import date
 
 import pandas as pd
+
+from riskvar.loader import PortfolioPosition
 
 
 def _fmt_usd_compact(value: float) -> str:
@@ -241,6 +245,47 @@ def _build_performance_chart(performance_series: pd.Series) -> str:
 </script>'''
 
 
+def _fmt_position_value(position: PortfolioPosition) -> str:
+    suffix = "/bp" if position.position_type == "dv01" else ""
+    return _fmt_usd_full(position.position_value) + suffix
+
+
+def _build_positions_table(
+    positions: list[PortfolioPosition],
+    contributions_by_window: dict[str, list[float]],
+    primary_window: str,
+) -> str:
+    if not positions:
+        return ""
+    window_labels = list(contributions_by_window.keys())
+    order = sorted(range(len(positions)), key=lambda i: -abs(contributions_by_window[primary_window][i]))
+
+    header_cells = "<th>Ativo</th><th>Classe</th><th>Tipo</th><th>Posição</th>" + "".join(
+        f"<th>Contrib. {html.escape(w)}</th>" for w in window_labels
+    )
+    rows = "".join(
+        "<tr>"
+        f"<td>{html.escape(positions[i].asset)}</td>"
+        f"<td>{html.escape(positions[i].asset_class)}</td>"
+        f"<td>{html.escape(positions[i].position_type.upper())}</td>"
+        f"<td class=\"num\">{_fmt_position_value(positions[i])}</td>"
+        + "".join(f'<td class="num">{contributions_by_window[w][i]:+.1f}%</td>' for w in window_labels)
+        + "</tr>"
+        for i in order
+    )
+    return f'''
+<section class="card">
+  <h2>Ativos do portfólio e contribuição ao risco</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr>{header_cells}</tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+  <p class="footer-note">Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
+</section>'''
+
+
 def _stat_tile(label: str, value: str) -> str:
     return f'<div class="stat-tile"><div class="stat-label">{label}</div><div class="stat-value">{value}</div></div>'
 
@@ -410,12 +455,22 @@ def render_report_html(
     performance_series: pd.Series,
     valuation_date: date,
     n_positions: int,
+    positions: list[PortfolioPosition],
+    contributions_by_window: dict[str, list[float]],
+    primary_window: str,
     base_currency: str = "USD",
 ) -> str:
     """Retorna o conteúdo (CSS + corpo) do relatório -- sem <!doctype>/<html>/
     <head>/<body>, para ser embrulhado tanto por save_standalone_html quanto
-    pelo publicador de Artifacts."""
+    pelo publicador de Artifacts.
+
+    `contributions_by_window`: window_label -> lista de % de contribuição
+    ao risco, mesma ordem/tamanho que `positions` (ver
+    riskvar.pnl_series.risk_contribution_pct). `primary_window` decide por
+    qual janela a tabela de ativos é ordenada (maior contribuição
+    absoluta primeiro)."""
     primary_confidence_label = report_df["confianca"].iloc[0]
+    positions_table = _build_positions_table(positions, contributions_by_window, primary_window)
     stat_tiles = _build_stat_tiles(report_df, primary_confidence_label)
     performance_chart = _build_performance_chart(performance_series)
     report_table = _build_report_table(report_df)
@@ -427,6 +482,7 @@ def render_report_html(
       <h1>Risco de portfólio</h1>
       <p>{n_positions} posições · base {base_currency} · dados de {valuation_date.strftime("%d/%m/%Y")}</p>
     </div>
+    {positions_table}
     <div class="stat-grid">{stat_tiles}</div>
     {performance_chart}
     {report_table}
