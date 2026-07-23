@@ -1,0 +1,58 @@
+"""Roda localmente (Bloomberg Terminal ativo): lê a planilha do portfólio,
+busca histórico de PX_LAST na Bloomberg para cada ticker e calcula VaR
+(histórico e paramétrico) e vol do portfólio, usando janelas de 3M e 12M
+de dados históricos. VaR em si é sempre de 1 dia -- ver
+config/portfolio_risk.yaml e riskvar/var_metrics.py.
+
+python scripts/run_var.py
+"""
+from __future__ import annotations
+
+import sys
+from datetime import date, timedelta
+from pathlib import Path
+
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from emrates.data.bbg_client import BbgClient
+from riskvar.loader import PortfolioLoader
+from riskvar.pnl_series import portfolio_pnl_series
+from riskvar.report import build_risk_report
+
+
+def main() -> None:
+    settings = yaml.safe_load(open("config/portfolio_risk.yaml", encoding="utf-8"))
+
+    loader = PortfolioLoader(settings["paths"]["portfolio_xlsx"], settings["sheet"], settings["columns"])
+    positions = loader.load()
+    print(f"{len(positions)} posições carregadas de {settings['paths']['portfolio_xlsx']}")
+
+    bbg = BbgClient(settings["paths"]["bbg_cache_dir"])
+    end = date.today()
+    start = end - timedelta(days=settings["history_buffer_calendar_days"])
+
+    tickers = sorted({p.ticker for p in positions})
+    history_df = bbg.history(tickers, start, end)
+
+    pnl_by_window = {}
+    for window_label, n_days in settings["lookback_windows"].items():
+        price_histories = {t: history_df[t].tail(n_days + 1) for t in tickers}
+        pnl_by_window[window_label] = portfolio_pnl_series(positions, price_histories).tail(n_days)
+
+    report = build_risk_report(
+        pnl_by_window, settings["confidence_levels"], settings["trading_days_per_year"]
+    )
+    print()
+    print(report.to_string(index=False))
+
+    output_dir = Path(settings["paths"]["output_dir"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_path = output_dir / f"var_report_{end}.csv"
+    report.to_csv(out_path, index=False)
+    print(f"\nSalvo em {out_path}")
+
+
+if __name__ == "__main__":
+    main()

@@ -65,6 +65,26 @@ python scripts/run_daily_pricing.py   # gera Data/processed/priced_bc_<país>_<d
 python scripts/run_pnl.py             # compara com a curva do dia anterior salva, gera Data/processed/pnl_<data>.csv
 ```
 
+## VaR e vol de portfólio (`riskvar/`)
+
+Projeto separado dentro do mesmo repo: lê uma planilha de posições
+(ativo, ticker BBG, tipo Notional/DV01, valor da posição — ver
+`config/portfolio_risk.yaml`), busca o histórico de PX_LAST na Bloomberg e
+calcula VaR (histórico e paramétrico, 95% de confiança) e vol do
+portfólio, usando janelas de estimação de 3M (63 dias úteis) e 12M (252
+dias úteis). O VaR em si é sempre de 1 dia — o que muda entre as janelas é
+quanto histórico entra na amostra, não o horizonte projetado.
+
+```bash
+python scripts/run_var.py             # gera Data/processed/var_report_<data>.csv
+```
+
+Ajuste `config/portfolio_risk.yaml` com o caminho real da sua planilha e
+os nomes das colunas/aba antes de rodar. Convenção de sinal do DV01: valor
+da posição para uma **alta** de 1bp na taxa (mesma convenção de
+`emrates.portfolio.risk.dv01`) — se a posição ganha quando a taxa sobe
+(ex: pagador em swap), o DV01 informado deve ser positivo.
+
 ## Arquitetura
 
 ```

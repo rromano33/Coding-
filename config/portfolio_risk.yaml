@@ -1,0 +1,33 @@
+paths:
+  portfolio_xlsx: "Data/raw/Portfolio.xlsx"   # ajuste para o caminho real da sua planilha
+  bbg_cache_dir: "Data/raw"
+  output_dir: "Data/processed"
+
+sheet: "Portfolio"   # nome da aba com as posições
+
+# Uma linha por ativo. Tipo deve ser "Notional" ou "DV01" (case-insensitive):
+#   - Notional: Ticker aponta para um preço/nível (ação, FX, preço de bond,
+#     índice) e Posicao é o valor de mercado em $ da posição.
+#   - DV01: Ticker aponta para uma taxa/yield cotada em % (mesma convenção
+#     dos tickers de curva do projeto emrates) e Posicao é o DV01 em $/bp —
+#     ver o aviso de convenção de sinal em src/riskvar/pnl_series.py.
+columns:
+  asset: "Ativo"
+  ticker: "Ticker"
+  position_type: "Tipo"
+  position_value: "Posicao"
+
+# Janelas de estimação (lookback) em dias úteis — não é o horizonte do VaR
+# em si (que continua sendo 1 dia), é quantos dias de histórico entram na
+# amostra usada pra estimar vol/VaR. ~21 dias úteis/mês.
+lookback_windows:
+  3M: 63
+  12M: 252
+
+confidence_levels: [0.95]
+
+trading_days_per_year: 252
+
+# Quantos dias corridos pedir pra trás na Bloomberg pra garantir que sobrem
+# 252+1 observações válidas dentro da janela de 12M mesmo com feriados.
+history_buffer_calendar_days: 500
