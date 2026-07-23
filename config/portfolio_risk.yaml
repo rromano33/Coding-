@@ -1,5 +1,5 @@
 paths:
-  portfolio_xlsx: "Data/raw/Portfolio.xlsx"   # ajuste para o caminho real da sua planilha
+  portfolio_xlsx: "Data/Portfolio.xlsx"   # confirmado 23/07/2026: fica direto em Data/, não Data/raw/
   bbg_cache_dir: "Data/raw"
   output_dir: "Data/processed"
 
