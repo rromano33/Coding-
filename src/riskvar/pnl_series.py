@@ -32,6 +32,21 @@ def position_pnl_series(position: PortfolioPosition, price_history: pd.Series) -
     return position.position_value * daily_change_bps
 
 
+def filter_positions_with_history(
+    positions: list[PortfolioPosition], available_tickers
+) -> tuple[list[PortfolioPosition], list[str]]:
+    """Descarta posições cujo ticker a Bloomberg simplesmente não devolveu
+    no histórico (bdh às vezes omite a coluna inteira em vez de vir cheia
+    de NaN -- ticker sem dado nenhum no range pedido, par pouco líquido,
+    erro de digitação na planilha etc.) em vez de deixar o resto do
+    cálculo (portfolio_pnl_series) quebrar com KeyError. Quem chamar deve
+    avisar o usuário sobre os tickers retornados em `missing`."""
+    available = set(available_tickers)
+    missing = sorted({p.ticker for p in positions if p.ticker not in available})
+    kept = [p for p in positions if p.ticker not in missing]
+    return kept, missing
+
+
 def portfolio_pnl_series(positions: list[PortfolioPosition], price_histories: dict[str, pd.Series]) -> pd.Series:
     """Soma as séries de P&L de cada posição, alinhadas por data. Dias em
     que falta cotação para um ticker específico contam como 0 de P&L

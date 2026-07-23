@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from emrates.data.bbg_client import BbgClient
 from riskvar.html_report import render_report_html, save_standalone_html
 from riskvar.loader import PortfolioLoader
-from riskvar.pnl_series import portfolio_pnl_series
+from riskvar.pnl_series import filter_positions_with_history, portfolio_pnl_series
 from riskvar.report import build_risk_report
 
 
@@ -36,6 +36,16 @@ def main() -> None:
 
     tickers = sorted({p.ticker for p in positions})
     history_df = bbg.history(tickers, start, end)
+
+    positions, missing_tickers = filter_positions_with_history(positions, history_df.columns)
+    if missing_tickers:
+        print(
+            f"Sem histórico na Bloomberg para: {', '.join(missing_tickers)} "
+            "-- excluí essas posições do cálculo de VaR/vol (confira o ticker na planilha)."
+        )
+    if not positions:
+        raise SystemExit("Nenhuma posição com histórico válido na Bloomberg -- nada para calcular.")
+    tickers = sorted({p.ticker for p in positions})
 
     pnl_by_window = {}
     for window_label, n_days in settings["lookback_windows"].items():

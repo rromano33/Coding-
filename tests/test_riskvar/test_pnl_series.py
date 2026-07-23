@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from riskvar.loader import PortfolioPosition
-from riskvar.pnl_series import portfolio_pnl_series, position_pnl_series
+from riskvar.pnl_series import filter_positions_with_history, portfolio_pnl_series, position_pnl_series
 
 
 def _series(values: list[float]) -> pd.Series:
@@ -54,3 +54,21 @@ def test_portfolio_pnl_treats_missing_quote_day_as_zero_for_that_position():
     pnl = portfolio_pnl_series([notional, dv01_pos], prices)
     assert len(pnl) == 2
     assert pnl.iloc[1] == pytest.approx(1_000_000 * (103.0 / 102.0 - 1))
+
+
+def test_filter_positions_with_history_drops_tickers_bbg_never_returned():
+    # bdh às vezes omite a coluna inteira (não NaN, ausente mesmo) para um
+    # ticker sem dado nenhum no range pedido -- isso não pode derrubar o
+    # cálculo do resto do portfólio.
+    kept_position = PortfolioPosition(asset="Ação X", ticker="X", position_type="notional", position_value=1_000_000)
+    orphan_position = PortfolioPosition(asset="FX Y", ticker="AUDCAD Curncy", position_type="notional", position_value=500_000)
+    kept, missing = filter_positions_with_history([kept_position, orphan_position], available_tickers=["X"])
+    assert kept == [kept_position]
+    assert missing == ["AUDCAD Curncy"]
+
+
+def test_filter_positions_with_history_keeps_everything_when_all_tickers_present():
+    position = PortfolioPosition(asset="Ação X", ticker="X", position_type="notional", position_value=1_000_000)
+    kept, missing = filter_positions_with_history([position], available_tickers=["X", "Y"])
+    assert kept == [position]
+    assert missing == []
