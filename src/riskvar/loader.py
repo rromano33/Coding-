@@ -60,6 +60,15 @@ class PortfolioLoader:
             ticker = row[ticker_col]
             if pd.isna(ticker):
                 continue
+            raw_value = row[value_col]
+            if pd.isna(raw_value) or float(raw_value) == 0.0:
+                # Linha só de referência/watchlist (sem posição de fato) --
+                # contribui zero pro P&L de qualquer forma, então nem vale
+                # gastar uma chamada de histórico na Bloomberg com o ticker
+                # dela. Pula antes de validar "Tipo" também, pra não quebrar
+                # em linhas de referência com esse campo vazio/preenchido
+                # com outra coisa.
+                continue
             position_type = str(row[type_col]).strip().lower()
             if position_type not in ("notional", "dv01"):
                 raise ValueError(
@@ -70,7 +79,7 @@ class PortfolioLoader:
                     asset=str(row[asset_col]).strip(),
                     ticker=str(ticker).strip(),
                     position_type=position_type,
-                    position_value=float(row[value_col]),
+                    position_value=float(raw_value),
                     asset_class=str(row[class_col]).strip() if class_col else "N/A",
                 )
             )

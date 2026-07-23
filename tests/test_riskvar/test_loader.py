@@ -88,6 +88,38 @@ def test_optional_asset_class_column_read_when_configured(tmp_path):
     assert positions[0].asset_class == "Equity"
 
 
+def test_skips_rows_with_zero_or_blank_position_value(tmp_path):
+    # Linhas de referência/watchlist (sem posição de fato) não devem virar
+    # chamadas de histórico na Bloomberg -- contribuiriam zero pro P&L de
+    # qualquer forma.
+    path = _write_xlsx(
+        tmp_path,
+        [
+            {"Ativo": "Ação X", "Ticker": "X US Equity", "Tipo": "Notional", "Posicao": 1_000_000},
+            {"Ativo": "Watchlist Y", "Ticker": "Y US Equity", "Tipo": "Notional", "Posicao": 0},
+            {"Ativo": "Watchlist Z", "Ticker": "Z US Equity", "Tipo": "Notional", "Posicao": None},
+        ],
+    )
+    positions = PortfolioLoader(path, "Portfolio", COLUMN_MAP).load()
+    assert len(positions) == 1
+    assert positions[0].ticker == "X US Equity"
+
+
+def test_skips_zero_position_row_even_with_garbage_tipo(tmp_path):
+    # Linha de referência com "Tipo" preenchido de qualquer jeito (ou vazio)
+    # não deve derrubar o load -- ela nem chega a ser validada, já que tem
+    # posição zerada.
+    path = _write_xlsx(
+        tmp_path,
+        [
+            {"Ativo": "Ação X", "Ticker": "X US Equity", "Tipo": "Notional", "Posicao": 1_000_000},
+            {"Ativo": "Watchlist Y", "Ticker": "Y US Equity", "Tipo": "???", "Posicao": 0},
+        ],
+    )
+    positions = PortfolioLoader(path, "Portfolio", COLUMN_MAP).load()
+    assert len(positions) == 1
+
+
 def test_raises_helpful_error_when_configured_column_missing(tmp_path):
     path = _write_xlsx(
         tmp_path,
