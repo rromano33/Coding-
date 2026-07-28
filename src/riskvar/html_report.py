@@ -254,9 +254,9 @@ def _build_performance_chart(performance_series: pd.Series) -> str:
 </script>'''
 
 
-def _fmt_position_value(position: PortfolioPosition) -> str:
+def _fmt_position_value_compact(position: PortfolioPosition) -> str:
     suffix = "/bp" if position.position_type == "dv01" else ""
-    return _fmt_usd_full(position.position_value) + suffix
+    return _fmt_usd_compact(position.position_value) + suffix
 
 
 _SORTABLE_TABLE_SCRIPT = '''
@@ -265,7 +265,7 @@ if (!window.__initSortableTable) {
   window.__initSortableTable = function(tableId) {
     const table = document.getElementById(tableId);
     const thead = table.querySelector('thead');
-    const tbody = table.querySelector('tbody');
+    const bodies = Array.prototype.slice.call(table.querySelectorAll('tbody'));
     let currentCol = null;
     let currentDir = 1;
     thead.querySelectorAll('th').forEach(function(th, colIdx) {
@@ -275,14 +275,19 @@ if (!window.__initSortableTable) {
         const dir = (currentCol === colIdx) ? -currentDir : -1;
         currentCol = colIdx;
         currentDir = dir;
-        const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
-        rows.sort(function(a, b) {
-          const cellA = a.children[colIdx].getAttribute('data-sort-value');
-          const cellB = b.children[colIdx].getAttribute('data-sort-value');
-          const cmp = type === 'num' ? (parseFloat(cellA) - parseFloat(cellB)) : cellA.localeCompare(cellB, 'pt-BR');
-          return cmp * dir;
+        bodies.forEach(function(tbody) {
+          // as linhas de cabeçalho de grupo (subtotal por classe) ficam
+          // fixas -- só as linhas de posição dentro de cada grupo se
+          // reordenam, então a agrupação nunca se perde ao ordenar.
+          const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr:not(.group-header-row)'));
+          rows.sort(function(a, b) {
+            const cellA = a.children[colIdx].getAttribute('data-sort-value');
+            const cellB = b.children[colIdx].getAttribute('data-sort-value');
+            const cmp = type === 'num' ? (parseFloat(cellA) - parseFloat(cellB)) : cellA.localeCompare(cellB, 'pt-BR');
+            return cmp * dir;
+          });
+          rows.forEach(function(row) { tbody.appendChild(row); });
         });
-        rows.forEach(function(row) { tbody.appendChild(row); });
         thead.querySelectorAll('th').forEach(function(h) { h.removeAttribute('aria-sort'); });
         th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
       });
@@ -297,47 +302,75 @@ def _build_positions_table(
     contributions_by_window: dict[str, list[float]],
     primary_window: str,
 ) -> str:
+    """Tabela agrupada por Classe (igual ao recorte do gráfico de pizza
+    "por classe"), com uma linha de subtotal por grupo e as posições
+    daquele grupo logo abaixo, ordenadas pela contribuição absoluta na
+    janela primária. A coluna Classe em si some da tabela -- vira o
+    cabeçalho da seção, então não repete a mesma informação duas vezes e
+    a tabela fica mais estreita. Colunas de contribuição por posição
+    continuam clicáveis pra reordenar (dentro de cada grupo -- ver
+    _SORTABLE_TABLE_SCRIPT)."""
     if not positions:
         return ""
     window_labels = list(contributions_by_window.keys())
-    order = sorted(range(len(positions)), key=lambda i: -abs(contributions_by_window[primary_window][i]))
-    primary_col_idx = 4 + window_labels.index(primary_window)
 
-    fixed_headers = [
-        ("Ativo", "text"),
-        ("Classe", "text"),
-        ("Tipo", "text"),
-        ("Posição", "num"),
-    ]
+    class_totals_by_window = {
+        w: dict(_group_contributions(positions, contributions_by_window[w], lambda p: p.asset_class))
+        for w in window_labels
+    }
+    classes_sorted = sorted(
+        class_totals_by_window[primary_window], key=lambda c: -abs(class_totals_by_window[primary_window][c])
+    )
+    indices_by_class: dict[str, list[int]] = {}
+    for i, p in enumerate(positions):
+        indices_by_class.setdefault(p.asset_class, []).append(i)
+
+    fixed_headers = [("Ativo", "text"), ("Tipo", "text"), ("Posição", "num")]
+    n_fixed = len(fixed_headers)
+    primary_col_idx = n_fixed + window_labels.index(primary_window)
     header_cells_parts = [f'<th data-sort="{sort_type}">{label}</th>' for label, sort_type in fixed_headers]
     for i, w in enumerate(window_labels):
-        aria = ' aria-sort="descending"' if 4 + i == primary_col_idx else ""
-        header_cells_parts.append(f'<th data-sort="num"{aria}>Contrib. {html.escape(w)}</th>')
+        aria = ' aria-sort="descending"' if n_fixed + i == primary_col_idx else ""
+        header_cells_parts.append(f'<th data-sort="num"{aria}>{html.escape(w)}</th>')
     header_cells = "".join(header_cells_parts)
-    rows = "".join(
-        "<tr>"
-        f'<td data-sort-value="{html.escape(positions[i].asset)}">{html.escape(positions[i].asset)}</td>'
-        f'<td data-sort-value="{html.escape(positions[i].asset_class)}">{html.escape(positions[i].asset_class)}</td>'
-        f'<td data-sort-value="{html.escape(positions[i].position_type)}">{html.escape(positions[i].position_type.upper())}</td>'
-        f'<td class="num" data-sort-value="{positions[i].position_value}">{_fmt_position_value(positions[i])}</td>'
-        + "".join(
-            f'<td class="num" data-sort-value="{contributions_by_window[w][i]}">{contributions_by_window[w][i]:+.1f}%</td>'
-            for w in window_labels
+    n_cols = n_fixed + len(window_labels)
+
+    bodies = []
+    for class_name in classes_sorted:
+        idxs = sorted(indices_by_class[class_name], key=lambda i: -abs(contributions_by_window[primary_window][i]))
+        subtotal_text = " · ".join(
+            f"{html.escape(w)}: {class_totals_by_window[w][class_name]:+.1f}%" for w in window_labels
         )
-        + "</tr>"
-        for i in order
-    )
+        rows = "".join(
+            "<tr>"
+            f'<td data-sort-value="{html.escape(positions[i].asset)}">{html.escape(positions[i].asset)}</td>'
+            f'<td data-sort-value="{html.escape(positions[i].position_type)}">{html.escape(positions[i].position_type.upper())}</td>'
+            f'<td class="num" data-sort-value="{positions[i].position_value}">{_fmt_position_value_compact(positions[i])}</td>'
+            + "".join(
+                f'<td class="num" data-sort-value="{contributions_by_window[w][i]}">{contributions_by_window[w][i]:+.1f}%</td>'
+                for w in window_labels
+            )
+            + "</tr>"
+            for i in idxs
+        )
+        bodies.append(
+            f'<tbody><tr class="group-header-row"><td colspan="{n_cols}">'
+            f'<span class="group-name">{html.escape(class_name)}</span>'
+            f'<span class="group-subtotal">{subtotal_text}</span>'
+            f"</td></tr>{rows}</tbody>"
+        )
+
     return f'''
 <section class="card">
   <h2>Ativos do portfólio e contribuição ao risco</h2>
-  <p class="footer-note" style="margin-top: -8px; margin-bottom: 14px;">Clique numa coluna para ordenar por ela.</p>
+  <p class="footer-note" style="margin-top: -8px; margin-bottom: 14px;">Agrupado por classe, como no gráfico de pizza. Clique numa coluna para ordenar dentro de cada grupo.</p>
   <div class="table-scroll table-scroll--tall">
-    <table class="data-table sortable-table" id="positions-table">
+    <table class="data-table data-table--compact sortable-table" id="positions-table">
       <thead><tr>{header_cells}</tr></thead>
-      <tbody>{rows}</tbody>
+      {"".join(bodies)}
     </table>
   </div>
-  <p class="footer-note">Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
+  <p class="footer-note">Contribuição = participação de cada ativo (ou classe, na linha de subtotal) na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
 </section>
 {_SORTABLE_TABLE_SCRIPT}
 <script>window.__initSortableTable("positions-table");</script>'''
@@ -645,6 +678,14 @@ _CSS = '''
   .sortable-table th[data-sort]:hover { color: var(--text-primary); }
   .sortable-table th[aria-sort="descending"]::after { content: " \\25BE"; }
   .sortable-table th[aria-sort="ascending"]::after { content: " \\25B4"; }
+  .data-table--compact { font-size: 12px; }
+  .data-table--compact th, .data-table--compact td { padding: 5px 8px; }
+  .group-header-row td {
+    padding: 8px 8px 6px; border-bottom: 1px solid var(--border);
+    background: var(--page-plane); white-space: nowrap;
+  }
+  .group-name { font-weight: 600; color: var(--text-primary); font-size: 12px; }
+  .group-subtotal { color: var(--text-secondary); font-size: 11px; margin-left: 10px; font-variant-numeric: tabular-nums; }
   .footer-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
   .pie-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
   .pie-card {

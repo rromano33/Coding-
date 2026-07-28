@@ -128,13 +128,48 @@ def test_positions_table_is_sortable_with_raw_numeric_sort_values():
     )
 
     assert 'id="positions-table"' in html
-    assert 'class="data-table sortable-table"' in html
+    assert "sortable-table" in html
     assert '__initSortableTable("positions-table")' in html
     # valor bruto (não formatado) disponível pro JS ordenar numericamente
     assert 'data-sort-value="-3000000.0"' in html
     assert 'data-sort-value="-8.25"' in html
     # a coluna da janela primária já nasce marcada como ordenada
     assert 'aria-sort="descending"' in html
+
+
+def test_positions_table_groups_by_class_with_subtotal_rows():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    positions = [
+        PortfolioPosition(asset="ES1", ticker="A", position_type="notional", position_value=10_000_000, asset_class="Equity"),
+        PortfolioPosition(asset="EWZ", ticker="B", position_type="notional", position_value=-3_000_000, asset_class="Equity"),
+        PortfolioPosition(asset="AUDUSD", ticker="C", position_type="notional", position_value=5_000_000, asset_class="FX"),
+    ]
+    contributions = {"3M": [50.0, 30.0, 20.0], "12M": [70.0, -10.0, 40.0]}
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=3,
+        positions=positions, contributions_by_window=contributions, primary_window="12M",
+    )
+
+    # duas classes -> dois <tbody>, cada um com sua própria linha de grupo
+    assert html.count('<tbody><tr class="group-header-row"') == 2
+    assert '<span class="group-name">Equity</span>' in html
+    assert '<span class="group-name">FX</span>' in html
+    # subtotal da classe Equity na 12M = 70 + (-10) = 60
+    assert "12M: +60.0%" in html
+    # a coluna "Classe" não existe mais como coluna própria -- é o cabeçalho do grupo
+    assert "<th data-sort=\"text\">Classe</th>" not in html
+    # classe com maior |contribuição| (FX, 40) vem depois de Equity (60) na ordenação por grupo primário
+    assert html.index("Equity") < html.index("FX")
+
+
+def test_sortable_script_preserves_group_header_rows():
+    # A linha de grupo tem que ficar de fora do reordenamento por coluna
+    # (senão a agrupação por classe se perderia ao clicar num cabeçalho).
+    from riskvar.html_report import _SORTABLE_TABLE_SCRIPT
+
+    assert "tr:not(.group-header-row)" in _SORTABLE_TABLE_SCRIPT
 
 
 def test_pie_charts_present_for_class_and_asset_breakdown():
