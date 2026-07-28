@@ -360,12 +360,25 @@ def _build_positions_table(
             f"</td></tr>{rows}</tbody>"
         )
 
+    # Larguras fixas via <colgroup> -- com múltiplos <tbody> (um por classe),
+    # deixar table-layout:auto decidir a largura pelo conteúdo pode fazer
+    # cada seção calcular colunas ligeiramente diferentes entre si; largura
+    # explícita garante que Ativo/Tipo/Posição/janelas fiquem exatamente
+    # alinhados verticalmente entre todos os grupos.
+    window_col_width = 40.0 / len(window_labels)
+    colgroup = (
+        '<colgroup><col style="width:26%"><col style="width:14%"><col style="width:20%">'
+        + "".join(f'<col style="width:{window_col_width:.2f}%">' for _ in window_labels)
+        + "</colgroup>"
+    )
+
     return f'''
 <section class="card">
   <h2>Ativos do portfólio e contribuição ao risco</h2>
   <p class="footer-note" style="margin-top: -8px; margin-bottom: 14px;">Agrupado por classe, como no gráfico de pizza. Clique numa coluna para ordenar dentro de cada grupo.</p>
   <div class="table-scroll table-scroll--tall">
     <table class="data-table data-table--compact sortable-table" id="positions-table">
+      {colgroup}
       <thead><tr>{header_cells}</tr></thead>
       {"".join(bodies)}
     </table>
@@ -664,22 +677,32 @@ _CSS = '''
   .tooltip-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
   .tooltip-date { font-size: 11px; color: var(--text-muted); }
   .table-scroll { overflow-x: auto; max-height: 340px; overflow-y: auto; }
-  .table-scroll--tall { max-height: 520px; }
-  .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .table-scroll--tall { max-height: 560px; }
+  /* border-collapse:collapse + position:sticky on th is a known Chromium/Edge
+     bug: body rows render visually offset from their header/column once the
+     container scrolls. border-collapse:separate + border-spacing:0 is the
+     documented fix -- keeps sticky headers without the misalignment. */
+  .data-table {
+    width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px;
+  }
   .data-table th {
     text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 500;
-    padding: 6px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1);
-    white-space: nowrap;
+    padding: 8px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1);
+    white-space: nowrap; vertical-align: middle;
   }
-  .data-table td { padding: 6px 10px; border-bottom: 1px solid var(--gridline); color: var(--text-secondary); white-space: nowrap; }
+  .data-table td {
+    padding: 8px 10px; border-bottom: 1px solid var(--gridline); color: var(--text-secondary);
+    white-space: nowrap; vertical-align: middle; overflow: hidden; text-overflow: ellipsis;
+  }
   .data-table td:first-child, .data-table th:first-child { color: var(--text-primary); }
   .data-table td.num, .data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .data-table tbody tr:not(.group-header-row):nth-child(even) { background: var(--page-plane); }
   .sortable-table th[data-sort] { cursor: pointer; user-select: none; }
   .sortable-table th[data-sort]:hover { color: var(--text-primary); }
   .sortable-table th[aria-sort="descending"]::after { content: " \\25BE"; }
   .sortable-table th[aria-sort="ascending"]::after { content: " \\25B4"; }
-  .data-table--compact { font-size: 12px; }
-  .data-table--compact th, .data-table--compact td { padding: 5px 8px; }
+  .data-table--compact { font-size: 12px; table-layout: fixed; }
+  .data-table--compact th, .data-table--compact td { padding: 6px 8px; }
   .group-header-row td {
     padding: 8px 8px 6px; border-bottom: 1px solid var(--border);
     background: var(--page-plane); white-space: nowrap;
