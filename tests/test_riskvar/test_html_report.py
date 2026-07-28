@@ -137,7 +137,9 @@ def test_positions_table_is_sortable_with_raw_numeric_sort_values():
     assert 'aria-sort="descending"' in html
 
 
-def test_positions_table_groups_by_class_with_subtotal_rows():
+def test_positions_table_is_flat_with_classe_as_its_own_column():
+    # Revertido a pedido do Ricardo -- sem quebra/agrupamento por classe,
+    # uma linha por posição só, "Classe" de volta como coluna normal.
     report_df = _sample_report_df()
     performance = _synthetic_performance_series(252)
     positions = [
@@ -152,24 +154,13 @@ def test_positions_table_groups_by_class_with_subtotal_rows():
         positions=positions, contributions_by_window=contributions, primary_window="12M",
     )
 
-    # duas classes -> dois <tbody>, cada um com sua própria linha de grupo
-    assert html.count('<tbody><tr class="group-header-row"') == 2
-    assert '<span class="group-name">Equity</span>' in html
-    assert '<span class="group-name">FX</span>' in html
-    # subtotal da classe Equity na 12M = 70 + (-10) = 60
-    assert "12M: +60.0%" in html
-    # a coluna "Classe" não existe mais como coluna própria -- é o cabeçalho do grupo
-    assert "<th data-sort=\"text\">Classe</th>" not in html
-    # classe com maior |contribuição| (FX, 40) vem depois de Equity (60) na ordenação por grupo primário
-    assert html.index("Equity") < html.index("FX")
-
-
-def test_sortable_script_preserves_group_header_rows():
-    # A linha de grupo tem que ficar de fora do reordenamento por coluna
-    # (senão a agrupação por classe se perderia ao clicar num cabeçalho).
-    from riskvar.html_report import _SORTABLE_TABLE_SCRIPT
-
-    assert "tr:not(.group-header-row)" in _SORTABLE_TABLE_SCRIPT
+    assert '<table class="data-table data-table--compact sortable-table" id="positions-table">' in html
+    assert "group-header-row" not in html
+    assert '<th data-sort="text">Classe</th>' in html
+    assert 'data-sort-value="Equity"' in html
+    assert 'data-sort-value="FX"' in html
+    # ordenada pela |contribuição| absoluta na janela primária: ES1 (70) > AUDUSD (40) > EWZ (10)
+    assert html.index("ES1") < html.index("AUDUSD") < html.index("EWZ")
 
 
 def test_pie_charts_present_for_class_and_asset_breakdown():

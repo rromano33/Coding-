@@ -265,7 +265,7 @@ if (!window.__initSortableTable) {
   window.__initSortableTable = function(tableId) {
     const table = document.getElementById(tableId);
     const thead = table.querySelector('thead');
-    const bodies = Array.prototype.slice.call(table.querySelectorAll('tbody'));
+    const tbody = table.querySelector('tbody');
     let currentCol = null;
     let currentDir = 1;
     thead.querySelectorAll('th').forEach(function(th, colIdx) {
@@ -275,19 +275,14 @@ if (!window.__initSortableTable) {
         const dir = (currentCol === colIdx) ? -currentDir : -1;
         currentCol = colIdx;
         currentDir = dir;
-        bodies.forEach(function(tbody) {
-          // as linhas de cabeçalho de grupo (subtotal por classe) ficam
-          // fixas -- só as linhas de posição dentro de cada grupo se
-          // reordenam, então a agrupação nunca se perde ao ordenar.
-          const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr:not(.group-header-row)'));
-          rows.sort(function(a, b) {
-            const cellA = a.children[colIdx].getAttribute('data-sort-value');
-            const cellB = b.children[colIdx].getAttribute('data-sort-value');
-            const cmp = type === 'num' ? (parseFloat(cellA) - parseFloat(cellB)) : cellA.localeCompare(cellB, 'pt-BR');
-            return cmp * dir;
-          });
-          rows.forEach(function(row) { tbody.appendChild(row); });
+        const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        rows.sort(function(a, b) {
+          const cellA = a.children[colIdx].getAttribute('data-sort-value');
+          const cellB = b.children[colIdx].getAttribute('data-sort-value');
+          const cmp = type === 'num' ? (parseFloat(cellA) - parseFloat(cellB)) : cellA.localeCompare(cellB, 'pt-BR');
+          return cmp * dir;
         });
+        rows.forEach(function(row) { tbody.appendChild(row); });
         thead.querySelectorAll('th').forEach(function(h) { h.removeAttribute('aria-sort'); });
         th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
       });
@@ -302,30 +297,16 @@ def _build_positions_table(
     contributions_by_window: dict[str, list[float]],
     primary_window: str,
 ) -> str:
-    """Tabela agrupada por Classe (igual ao recorte do gráfico de pizza
-    "por classe"), com uma linha de subtotal por grupo e as posições
-    daquele grupo logo abaixo, ordenadas pela contribuição absoluta na
-    janela primária. A coluna Classe em si some da tabela -- vira o
-    cabeçalho da seção, então não repete a mesma informação duas vezes e
-    a tabela fica mais estreita. Colunas de contribuição por posição
-    continuam clicáveis pra reordenar (dentro de cada grupo -- ver
-    _SORTABLE_TABLE_SCRIPT)."""
+    """Tabela plana (uma linha por posição, sem quebra por classe -- ver
+    os gráficos de pizza logo abaixo para o recorte por classe), ordenada
+    pela contribuição absoluta na janela primária, e clicável por coluna
+    pra reordenar (ver _SORTABLE_TABLE_SCRIPT)."""
     if not positions:
         return ""
     window_labels = list(contributions_by_window.keys())
+    order = sorted(range(len(positions)), key=lambda i: -abs(contributions_by_window[primary_window][i]))
 
-    class_totals_by_window = {
-        w: dict(_group_contributions(positions, contributions_by_window[w], lambda p: p.asset_class))
-        for w in window_labels
-    }
-    classes_sorted = sorted(
-        class_totals_by_window[primary_window], key=lambda c: -abs(class_totals_by_window[primary_window][c])
-    )
-    indices_by_class: dict[str, list[int]] = {}
-    for i, p in enumerate(positions):
-        indices_by_class.setdefault(p.asset_class, []).append(i)
-
-    fixed_headers = [("Ativo", "text"), ("Tipo", "text"), ("Posição", "num")]
+    fixed_headers = [("Ativo", "text"), ("Classe", "text"), ("Tipo", "text"), ("Posição", "num")]
     n_fixed = len(fixed_headers)
     primary_col_idx = n_fixed + window_labels.index(primary_window)
     header_cells_parts = [f'<th data-sort="{sort_type}">{label}</th>' for label, sort_type in fixed_headers]
@@ -333,41 +314,26 @@ def _build_positions_table(
         aria = ' aria-sort="descending"' if n_fixed + i == primary_col_idx else ""
         header_cells_parts.append(f'<th data-sort="num"{aria}>{html.escape(w)}</th>')
     header_cells = "".join(header_cells_parts)
-    n_cols = n_fixed + len(window_labels)
 
-    bodies = []
-    for class_name in classes_sorted:
-        idxs = sorted(indices_by_class[class_name], key=lambda i: -abs(contributions_by_window[primary_window][i]))
-        subtotal_text = " · ".join(
-            f"{html.escape(w)}: {class_totals_by_window[w][class_name]:+.1f}%" for w in window_labels
+    rows = "".join(
+        "<tr>"
+        f'<td data-sort-value="{html.escape(positions[i].asset)}">{html.escape(positions[i].asset)}</td>'
+        f'<td data-sort-value="{html.escape(positions[i].asset_class)}">{html.escape(positions[i].asset_class)}</td>'
+        f'<td data-sort-value="{html.escape(positions[i].position_type)}">{html.escape(positions[i].position_type.upper())}</td>'
+        f'<td class="num" data-sort-value="{positions[i].position_value}">{_fmt_position_value_compact(positions[i])}</td>'
+        + "".join(
+            f'<td class="num" data-sort-value="{contributions_by_window[w][i]}">{contributions_by_window[w][i]:+.1f}%</td>'
+            for w in window_labels
         )
-        rows = "".join(
-            "<tr>"
-            f'<td data-sort-value="{html.escape(positions[i].asset)}">{html.escape(positions[i].asset)}</td>'
-            f'<td data-sort-value="{html.escape(positions[i].position_type)}">{html.escape(positions[i].position_type.upper())}</td>'
-            f'<td class="num" data-sort-value="{positions[i].position_value}">{_fmt_position_value_compact(positions[i])}</td>'
-            + "".join(
-                f'<td class="num" data-sort-value="{contributions_by_window[w][i]}">{contributions_by_window[w][i]:+.1f}%</td>'
-                for w in window_labels
-            )
-            + "</tr>"
-            for i in idxs
-        )
-        bodies.append(
-            f'<tbody><tr class="group-header-row"><td colspan="{n_cols}">'
-            f'<span class="group-name">{html.escape(class_name)}</span>'
-            f'<span class="group-subtotal">{subtotal_text}</span>'
-            f"</td></tr>{rows}</tbody>"
-        )
+        + "</tr>"
+        for i in order
+    )
 
-    # Larguras fixas via <colgroup> -- com múltiplos <tbody> (um por classe),
-    # deixar table-layout:auto decidir a largura pelo conteúdo pode fazer
-    # cada seção calcular colunas ligeiramente diferentes entre si; largura
-    # explícita garante que Ativo/Tipo/Posição/janelas fiquem exatamente
-    # alinhados verticalmente entre todos os grupos.
-    window_col_width = 40.0 / len(window_labels)
+    # Larguras fixas via <colgroup> -- deixa a tabela previsível/alinhada
+    # independente do conteúdo (nome de ativo comprido etc).
+    window_col_width = 34.0 / len(window_labels)
     colgroup = (
-        '<colgroup><col style="width:26%"><col style="width:14%"><col style="width:20%">'
+        '<colgroup><col style="width:20%"><col style="width:14%"><col style="width:12%"><col style="width:20%">'
         + "".join(f'<col style="width:{window_col_width:.2f}%">' for _ in window_labels)
         + "</colgroup>"
     )
@@ -375,15 +341,15 @@ def _build_positions_table(
     return f'''
 <section class="card">
   <h2>Ativos do portfólio e contribuição ao risco</h2>
-  <p class="footer-note" style="margin-top: -8px; margin-bottom: 14px;">Agrupado por classe, como no gráfico de pizza. Clique numa coluna para ordenar dentro de cada grupo.</p>
+  <p class="footer-note" style="margin-top: -8px; margin-bottom: 14px;">Clique numa coluna para ordenar por ela.</p>
   <div class="table-scroll table-scroll--tall">
     <table class="data-table data-table--compact sortable-table" id="positions-table">
       {colgroup}
       <thead><tr>{header_cells}</tr></thead>
-      {"".join(bodies)}
+      <tbody>{rows}</tbody>
     </table>
   </div>
-  <p class="footer-note">Contribuição = participação de cada ativo (ou classe, na linha de subtotal) na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
+  <p class="footer-note">Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
 </section>
 {_SORTABLE_TABLE_SCRIPT}
 <script>window.__initSortableTable("positions-table");</script>'''
@@ -696,19 +662,13 @@ _CSS = '''
   }
   .data-table td:first-child, .data-table th:first-child { color: var(--text-primary); }
   .data-table td.num, .data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .data-table tbody tr:not(.group-header-row):nth-child(even) { background: var(--page-plane); }
+  .data-table tbody tr:nth-child(even) { background: var(--page-plane); }
   .sortable-table th[data-sort] { cursor: pointer; user-select: none; }
   .sortable-table th[data-sort]:hover { color: var(--text-primary); }
   .sortable-table th[aria-sort="descending"]::after { content: " \\25BE"; }
   .sortable-table th[aria-sort="ascending"]::after { content: " \\25B4"; }
   .data-table--compact { font-size: 12px; table-layout: fixed; }
   .data-table--compact th, .data-table--compact td { padding: 6px 8px; }
-  .group-header-row td {
-    padding: 8px 8px 6px; border-bottom: 1px solid var(--border);
-    background: var(--page-plane); white-space: nowrap;
-  }
-  .group-name { font-weight: 600; color: var(--text-primary); font-size: 12px; }
-  .group-subtotal { color: var(--text-secondary); font-size: 11px; margin-left: 10px; font-variant-numeric: tabular-nums; }
   .footer-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
   .pie-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
   .pie-card {
