@@ -23,6 +23,15 @@ import pandas as pd
 from riskvar.loader import PortfolioPosition
 
 
+def _json_for_script(data) -> str:
+    """json.dumps() só escapa pra sintaxe JSON válida, não pra embutir com
+    segurança dentro de uma tag <script> -- um valor com o texto literal
+    '</script>' fecharia a tag e injetaria HTML/JS arbitrário. Escapar
+    <, > e & pra \\uXXXX (mesma técnica do Django json_script) neutraliza
+    isso sem mudar o valor decodificado no JS."""
+    return json.dumps(data).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
 def _fmt_usd_compact(value: float) -> str:
     sign = "-" if value < 0 else ""
     v = abs(value)
@@ -129,7 +138,7 @@ def _build_performance_chart(performance_series: pd.Series) -> str:
   <rect id="perf-hit-area" x="{pad_left}" y="{pad_top}" width="{plot_w}" height="{plot_h}" fill="transparent" />
 </svg>'''
 
-    points_json = json.dumps([{"date": d, "value": v} for d, v in zip(dates, values)])
+    points_json = _json_for_script([{"date": d, "value": v} for d, v in zip(dates, values)])
     table_rows = "".join(
         f'<tr><td>{pd.Timestamp(d).strftime("%d/%m/%Y")}</td><td class="num">{_fmt_usd_full(v)}</td></tr>'
         for d, v in zip(dates, values)
@@ -250,6 +259,39 @@ def _fmt_position_value(position: PortfolioPosition) -> str:
     return _fmt_usd_full(position.position_value) + suffix
 
 
+_SORTABLE_TABLE_SCRIPT = '''
+<script>
+if (!window.__initSortableTable) {
+  window.__initSortableTable = function(tableId) {
+    const table = document.getElementById(tableId);
+    const thead = table.querySelector('thead');
+    const tbody = table.querySelector('tbody');
+    let currentCol = null;
+    let currentDir = 1;
+    thead.querySelectorAll('th').forEach(function(th, colIdx) {
+      const type = th.getAttribute('data-sort');
+      if (!type) return;
+      th.addEventListener('click', function() {
+        const dir = (currentCol === colIdx) ? -currentDir : -1;
+        currentCol = colIdx;
+        currentDir = dir;
+        const rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+        rows.sort(function(a, b) {
+          const cellA = a.children[colIdx].getAttribute('data-sort-value');
+          const cellB = b.children[colIdx].getAttribute('data-sort-value');
+          const cmp = type === 'num' ? (parseFloat(cellA) - parseFloat(cellB)) : cellA.localeCompare(cellB, 'pt-BR');
+          return cmp * dir;
+        });
+        rows.forEach(function(row) { tbody.appendChild(row); });
+        thead.querySelectorAll('th').forEach(function(h) { h.removeAttribute('aria-sort'); });
+        th.setAttribute('aria-sort', dir === 1 ? 'ascending' : 'descending');
+      });
+    });
+  };
+}
+</script>'''
+
+
 def _build_positions_table(
     positions: list[PortfolioPosition],
     contributions_by_window: dict[str, list[float]],
@@ -259,31 +301,183 @@ def _build_positions_table(
         return ""
     window_labels = list(contributions_by_window.keys())
     order = sorted(range(len(positions)), key=lambda i: -abs(contributions_by_window[primary_window][i]))
+    primary_col_idx = 4 + window_labels.index(primary_window)
 
-    header_cells = "<th>Ativo</th><th>Classe</th><th>Tipo</th><th>Posição</th>" + "".join(
-        f"<th>Contrib. {html.escape(w)}</th>" for w in window_labels
-    )
+    fixed_headers = [
+        ("Ativo", "text"),
+        ("Classe", "text"),
+        ("Tipo", "text"),
+        ("Posição", "num"),
+    ]
+    header_cells_parts = [f'<th data-sort="{sort_type}">{label}</th>' for label, sort_type in fixed_headers]
+    for i, w in enumerate(window_labels):
+        aria = ' aria-sort="descending"' if 4 + i == primary_col_idx else ""
+        header_cells_parts.append(f'<th data-sort="num"{aria}>Contrib. {html.escape(w)}</th>')
+    header_cells = "".join(header_cells_parts)
     rows = "".join(
         "<tr>"
-        f"<td>{html.escape(positions[i].asset)}</td>"
-        f"<td>{html.escape(positions[i].asset_class)}</td>"
-        f"<td>{html.escape(positions[i].position_type.upper())}</td>"
-        f"<td class=\"num\">{_fmt_position_value(positions[i])}</td>"
-        + "".join(f'<td class="num">{contributions_by_window[w][i]:+.1f}%</td>' for w in window_labels)
+        f'<td data-sort-value="{html.escape(positions[i].asset)}">{html.escape(positions[i].asset)}</td>'
+        f'<td data-sort-value="{html.escape(positions[i].asset_class)}">{html.escape(positions[i].asset_class)}</td>'
+        f'<td data-sort-value="{html.escape(positions[i].position_type)}">{html.escape(positions[i].position_type.upper())}</td>'
+        f'<td class="num" data-sort-value="{positions[i].position_value}">{_fmt_position_value(positions[i])}</td>'
+        + "".join(
+            f'<td class="num" data-sort-value="{contributions_by_window[w][i]}">{contributions_by_window[w][i]:+.1f}%</td>'
+            for w in window_labels
+        )
         + "</tr>"
         for i in order
     )
     return f'''
 <section class="card">
   <h2>Ativos do portfólio e contribuição ao risco</h2>
-  <div class="table-scroll">
-    <table class="data-table">
+  <p class="footer-note" style="margin-top: -8px; margin-bottom: 14px;">Clique numa coluna para ordenar por ela.</p>
+  <div class="table-scroll table-scroll--tall">
+    <table class="data-table sortable-table" id="positions-table">
       <thead><tr>{header_cells}</tr></thead>
       <tbody>{rows}</tbody>
     </table>
   </div>
   <p class="footer-note">Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
-</section>'''
+</section>
+{_SORTABLE_TABLE_SCRIPT}
+<script>window.__initSortableTable("positions-table");</script>'''
+
+
+def _label_ink_for(hex_color: str) -> str:
+    """Escolhe texto branco ou escuro pra sobrepor uma fatia colorida,
+    pela luminância real da cor (nunca branco fixo -- ver marks-and-
+    anatomy.md: rótulo dentro de um preenchimento colorido é a única
+    exceção à regra de 'texto nunca usa a cor da série')."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
+
+    def lin(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    return "#0b0b0b" if luminance > 0.4 else "#ffffff"
+
+
+_PIE_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7"]
+_PIE_OTHER_COLOR = "#898781"
+
+
+def _group_contributions(
+    positions: list[PortfolioPosition], contributions: list[float], key_fn
+) -> list[tuple[str, float]]:
+    totals: dict[str, float] = {}
+    for p, c in zip(positions, contributions):
+        key = key_fn(p)
+        totals[key] = totals.get(key, 0.0) + c
+    return list(totals.items())
+
+
+def _group_and_cap(entries: list[tuple[str, float]], max_slices: int = 7) -> list[tuple[str, float]]:
+    """Ordena por |contribuição| desc; além de `max_slices`, dobra o resto
+    em 'Outros' (soma assinada) -- mesma regra da skill de dataviz pra
+    categóricas: uma 9ª série nunca vira mais uma cor, vira 'Other'."""
+    ordered = sorted(entries, key=lambda e: -abs(e[1]))
+    if len(ordered) <= max_slices:
+        return ordered
+    head = ordered[:max_slices]
+    tail_sum = sum(v for _, v in ordered[max_slices:])
+    return head + [("Outros", tail_sum)]
+
+
+def _build_pie_chart(chart_id: str, title: str, entries: list[tuple[str, float]]) -> str:
+    if not entries:
+        return ""
+    grouped = _group_and_cap(entries)
+    total_abs = sum(abs(v) for _, v in grouped) or 1.0
+
+    cx, cy, r = 100, 100, 88
+    slice_paths = []
+    start_angle = -90.0
+    for i, (label, value) in enumerate(grouped):
+        share = abs(value) / total_abs
+        sweep = share * 360.0
+        end_angle = start_angle + sweep
+        color = _PIE_OTHER_COLOR if label == "Outros" else _PIE_COLORS[i % len(_PIE_COLORS)]
+        is_hedge = value < 0 and label != "Outros"
+        large_arc = 1 if sweep > 180 else 0
+        x1 = cx + r * math.cos(math.radians(start_angle))
+        y1 = cy + r * math.sin(math.radians(start_angle))
+        x2 = cx + r * math.cos(math.radians(end_angle))
+        y2 = cy + r * math.sin(math.radians(end_angle))
+        path_d = f"M {cx},{cy} L {x1:.2f},{y1:.2f} A {r},{r} 0 {large_arc},1 {x2:.2f},{y2:.2f} Z"
+        dash = ' stroke-dasharray="4 3"' if is_hedge else ""
+        slice_paths.append(f'<path d="{path_d}" fill="{color}" class="pie-slice" data-idx="{i}"{dash} />')
+        if share >= 0.08:
+            mid_angle = math.radians((start_angle + end_angle) / 2)
+            lx = cx + (r * 0.62) * math.cos(mid_angle)
+            ly = cy + (r * 0.62) * math.sin(mid_angle)
+            ink = _label_ink_for(color)
+            slice_paths.append(
+                f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" class="pie-slice-label" fill="{ink}">{share * 100:.0f}%</text>'
+            )
+        start_angle = end_angle
+
+    legend_rows = "".join(
+        (
+            f'<div class="pie-legend-row" data-idx="{i}">'
+            f'<span class="pie-legend-swatch" style="background:{_PIE_OTHER_COLOR if label == "Outros" else _PIE_COLORS[i % len(_PIE_COLORS)]}"></span>'
+            f'<span class="pie-legend-label">{html.escape(label)}{" (hedge)" if value < 0 and label != "Outros" else ""}</span>'
+            f'<span class="pie-legend-value">{value:+.1f}%</span>'
+            "</div>"
+        )
+        for i, (label, value) in enumerate(grouped)
+    )
+
+    data_json = _json_for_script([{"label": label, "value": value} for label, value in grouped])
+
+    return f'''
+<div class="pie-card">
+  <h3>{html.escape(title)}</h3>
+  <div class="pie-wrap">
+    <svg viewBox="0 0 200 200" class="pie-chart" id="{chart_id}" role="img" aria-label="{html.escape(title)}">
+      {"".join(slice_paths)}
+    </svg>
+    <div class="pie-legend">{legend_rows}</div>
+  </div>
+  <div class="tooltip" id="{chart_id}-tooltip" style="opacity:0"></div>
+</div>
+<script>
+if (!window.__initPieChart) {{
+  window.__initPieChart = function(chartId, data) {{
+    const svg = document.getElementById(chartId);
+    const card = svg.closest('.pie-card');
+    const tooltip = document.getElementById(chartId + '-tooltip');
+    function show(idx, evt) {{
+      const d = data[idx];
+      tooltip.textContent = '';
+      const valueEl = document.createElement('div');
+      valueEl.className = 'tooltip-value';
+      valueEl.textContent = (d.value >= 0 ? '+' : '') + d.value.toFixed(1) + '%';
+      const labelEl = document.createElement('div');
+      labelEl.className = 'tooltip-date';
+      labelEl.textContent = d.label;
+      tooltip.appendChild(valueEl);
+      tooltip.appendChild(labelEl);
+      const rect = card.getBoundingClientRect();
+      tooltip.style.opacity = 1;
+      tooltip.style.left = (evt.clientX - rect.left) + 'px';
+      tooltip.style.top = (evt.clientY - rect.top) + 'px';
+    }}
+    function hide() {{ tooltip.style.opacity = 0; }}
+    card.querySelectorAll('.pie-slice').forEach(function(el) {{
+      const idx = parseInt(el.getAttribute('data-idx'), 10);
+      el.addEventListener('pointermove', function(evt) {{ show(idx, evt); }});
+      el.addEventListener('pointerleave', hide);
+    }});
+    card.querySelectorAll('.pie-legend-row').forEach(function(el) {{
+      const idx = parseInt(el.getAttribute('data-idx'), 10);
+      el.addEventListener('pointerenter', function(evt) {{ show(idx, evt); }});
+      el.addEventListener('pointerleave', hide);
+    }});
+  }};
+}}
+window.__initPieChart("{chart_id}", {data_json});
+</script>'''
 
 
 def _stat_tile(label: str, value: str) -> str:
@@ -380,7 +574,7 @@ _CSS = '''
     --border:         rgba(255,255,255,0.10);
   }
   .viz-root * { box-sizing: border-box; }
-  .report { max-width: 920px; margin: 0 auto; }
+  .report { max-width: 1200px; margin: 0 auto; }
   .report-header { margin-bottom: 28px; }
   .report-header h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
   .report-header p { font-size: 13px; color: var(--text-secondary); margin: 0; }
@@ -437,15 +631,37 @@ _CSS = '''
   .tooltip-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
   .tooltip-date { font-size: 11px; color: var(--text-muted); }
   .table-scroll { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+  .table-scroll--tall { max-height: 520px; }
   .data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
   .data-table th {
     text-align: left; font-size: 11px; color: var(--text-muted); font-weight: 500;
     padding: 6px 10px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface-1);
+    white-space: nowrap;
   }
-  .data-table td { padding: 6px 10px; border-bottom: 1px solid var(--gridline); color: var(--text-secondary); }
+  .data-table td { padding: 6px 10px; border-bottom: 1px solid var(--gridline); color: var(--text-secondary); white-space: nowrap; }
   .data-table td:first-child, .data-table th:first-child { color: var(--text-primary); }
   .data-table td.num, .data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sortable-table th[data-sort] { cursor: pointer; user-select: none; }
+  .sortable-table th[data-sort]:hover { color: var(--text-primary); }
+  .sortable-table th[aria-sort="descending"]::after { content: " \\25BE"; }
+  .sortable-table th[aria-sort="ascending"]::after { content: " \\25B4"; }
   .footer-note { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+  .pie-row { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+  .pie-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px 22px; flex: 1 1 400px; position: relative;
+  }
+  .pie-card h3 { font-size: 14px; font-weight: 600; margin: 0 0 16px; color: var(--text-primary); }
+  .pie-wrap { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .pie-chart { width: 170px; height: 170px; flex-shrink: 0; }
+  .pie-slice { stroke: var(--surface-1); stroke-width: 2; cursor: pointer; transition: opacity 0.1s ease; }
+  .pie-slice:hover { opacity: 0.85; }
+  .pie-slice-label { font-size: 11px; font-weight: 600; pointer-events: none; }
+  .pie-legend { display: flex; flex-direction: column; gap: 7px; font-size: 12px; flex: 1 1 160px; min-width: 160px; }
+  .pie-legend-row { display: flex; align-items: center; gap: 7px; cursor: pointer; padding: 2px 0; }
+  .pie-legend-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .pie-legend-label { color: var(--text-secondary); flex: 1; }
+  .pie-legend-value { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--text-primary); }
 </style>
 '''
 
@@ -471,6 +687,14 @@ def render_report_html(
     absoluta primeiro)."""
     primary_confidence_label = report_df["confianca"].iloc[0]
     positions_table = _build_positions_table(positions, contributions_by_window, primary_window)
+
+    primary_contributions = contributions_by_window.get(primary_window, [])
+    by_class = _group_contributions(positions, primary_contributions, lambda p: p.asset_class)
+    by_asset = _group_contributions(positions, primary_contributions, lambda p: p.asset)
+    pie_class = _build_pie_chart("pie-class", f"Contribuição por classe · {primary_window}", by_class)
+    pie_asset = _build_pie_chart("pie-asset", f"Contribuição por ativo · {primary_window}", by_asset)
+    pie_row = f'<div class="pie-row">{pie_class}{pie_asset}</div>' if (pie_class or pie_asset) else ""
+
     stat_tiles = _build_stat_tiles(report_df, primary_confidence_label)
     performance_chart = _build_performance_chart(performance_series)
     report_table = _build_report_table(report_df)
@@ -483,6 +707,7 @@ def render_report_html(
       <p>{n_positions} posições · base {base_currency} · dados de {valuation_date.strftime("%d/%m/%Y")}</p>
     </div>
     {positions_table}
+    {pie_row}
     <div class="stat-grid">{stat_tiles}</div>
     {performance_chart}
     {report_table}

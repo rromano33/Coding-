@@ -3,7 +3,13 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from riskvar.html_report import render_report_html, save_standalone_html
+from riskvar.html_report import (
+    _group_and_cap,
+    _group_contributions,
+    _label_ink_for,
+    render_report_html,
+    save_standalone_html,
+)
 from riskvar.loader import PortfolioPosition
 from riskvar.report import build_risk_report
 
@@ -108,6 +114,92 @@ def test_render_report_html_handles_single_day_performance_series():
         positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
     )
     assert "perf-chart" in html
+
+
+def test_positions_table_is_sortable_with_raw_numeric_sort_values():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    positions = [
+        PortfolioPosition(asset="ES1", ticker="A", position_type="notional", position_value=-3_000_000.0, asset_class="Equity"),
+    ]
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=1,
+        positions=positions, contributions_by_window={"3M": [42.5], "12M": [-8.25]}, primary_window="12M",
+    )
+
+    assert 'id="positions-table"' in html
+    assert 'class="data-table sortable-table"' in html
+    assert '__initSortableTable("positions-table")' in html
+    # valor bruto (não formatado) disponível pro JS ordenar numericamente
+    assert 'data-sort-value="-3000000.0"' in html
+    assert 'data-sort-value="-8.25"' in html
+    # a coluna da janela primária já nasce marcada como ordenada
+    assert 'aria-sort="descending"' in html
+
+
+def test_pie_charts_present_for_class_and_asset_breakdown():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    positions = [
+        PortfolioPosition(asset="ES1", ticker="A", position_type="notional", position_value=10_000_000, asset_class="Equity"),
+        PortfolioPosition(asset="EWZ", ticker="B", position_type="notional", position_value=-3_000_000, asset_class="Equity"),
+        PortfolioPosition(asset="AUDUSD", ticker="C", position_type="notional", position_value=5_000_000, asset_class="FX"),
+    ]
+    contributions = {"3M": [50.0, 30.0, 20.0], "12M": [70.0, -10.0, 40.0]}
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=3,
+        positions=positions, contributions_by_window=contributions, primary_window="12M",
+    )
+
+    assert 'id="pie-class"' in html
+    assert 'id="pie-asset"' in html
+    assert "Contribuição por classe · 12M" in html
+    assert "Contribuição por ativo · 12M" in html
+    assert "(hedge)" in html  # EWZ tem contribuição negativa na 12M
+
+
+def test_pie_chart_json_payload_is_safe_against_script_breakout():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    positions = [
+        PortfolioPosition(asset="</script><script>alert(1)</script>", ticker="A", position_type="notional", position_value=1_000, asset_class="Equity"),
+    ]
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=1,
+        positions=positions, contributions_by_window={"3M": [100.0], "12M": [100.0]}, primary_window="12M",
+    )
+    assert "</script><script>alert(1)</script>" not in html
+
+
+def test_group_and_cap_folds_extra_entries_into_outros():
+    entries = [(f"A{i}", float(i + 1)) for i in range(9)]  # 9 entradas, cap padrão é 7
+    grouped = _group_and_cap(entries)
+    assert len(grouped) == 8  # 7 + Outros
+    assert grouped[-1][0] == "Outros"
+    assert grouped[-1][1] == pytest.approx(1.0 + 2.0)  # soma assinada das 2 menores (A0=1, A1=2)
+
+
+def test_group_and_cap_keeps_everything_under_the_cap():
+    entries = [("A", 10.0), ("B", -5.0)]
+    assert _group_and_cap(entries) == [("A", 10.0), ("B", -5.0)]
+
+
+def test_group_contributions_sums_by_key():
+    positions = [
+        PortfolioPosition(asset="ES1", ticker="A", position_type="notional", position_value=1, asset_class="Equity"),
+        PortfolioPosition(asset="EWZ", ticker="B", position_type="notional", position_value=1, asset_class="Equity"),
+        PortfolioPosition(asset="AUDUSD", ticker="C", position_type="notional", position_value=1, asset_class="FX"),
+    ]
+    contributions = [40.0, 25.0, 35.0]
+    grouped = dict(_group_contributions(positions, contributions, lambda p: p.asset_class))
+    assert grouped["Equity"] == pytest.approx(65.0)
+    assert grouped["FX"] == pytest.approx(35.0)
+
+
+def test_label_ink_is_dark_on_light_fills_and_light_on_dark_fills():
+    assert _label_ink_for("#eda100") == "#0b0b0b"  # amarelo, claro -- precisa de texto escuro
+    assert _label_ink_for("#008300") == "#ffffff"  # verde escuro -- precisa de texto claro
 
 
 def test_save_standalone_html_wraps_content_in_full_document(tmp_path):
