@@ -153,6 +153,15 @@ aquela reunião. Para saber quanto está precificado na ÚLTIMA reunião de
 uma lista, inclua também a reunião seguinte na chamada (senão o método não
 tem de onde tirar o "nível depois" daquela última reunião).
 
+México usa uma curva à parte só pro relatório de reuniões:
+`curves/linear_rate.py` interpola a taxa cotada de cada pilar TIIE
+linearmente (sem bootstrap de cupom, sem NSS) — comparado contra a curva
+de TIIE real no Bloomberg (Ricardo, 29/07/2026), essa é a versão que mais
+se aproxima da referência dele (NSS divergia ~26bps acumulados até
+~17 meses à frente, essa versão fica em ~14bps). A curva usada pra
+precificar posições/PnL de México continua com bootstrap de cupom, sem
+mudança — só o relatório de "quanto está precificado" foi trocado.
+
 ### Cenários de BC
 
 `central_banks/scenarios.py` recebe choques (em bps) em uma ou mais

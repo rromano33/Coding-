@@ -24,10 +24,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import build_dashboard
 from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.central_banks.stripper import strip_meeting_path_from_pillars
+from emrates.conventions.compounding import Compounding
+from emrates.conventions.daycount import DayCount
 from emrates.curves.base import Pillar
 from emrates.curves.factory import build_curve_builder, load_country_config
 from emrates.curves.fra_direct import fra_priced_path
 from emrates.curves.fra_strip import extend_with_fra_strip, month_offset, parse_fra_period
+from emrates.curves.linear_rate import build_linear_rate_curve
 from emrates.data.bbg_client import BbgClient
 from emrates.data.calendars import Calendar, CalendarSet
 from emrates.data.excel_loader import InputsBCsLoader
@@ -48,6 +51,16 @@ FRA_STRIP_COUNTRIES = {"czech", "poland", "hungary"}
 # multi-meeting segments instead of NSS (see central_banks/stripper.py's
 # strip_meeting_path_from_pillars docstring).
 PILLAR_SPLIT_COUNTRIES = {"colombia"}
+
+# Ricardo (29/07/2026) comparou o priced_bc do México contra a curva de TIIE
+# real dele no Bloomberg (mesmos tickers MPSW) e viu o NSS divergindo ~26bps
+# acumulados até dez/27, crescendo com o prazo (a curva exata, sem NSS, era
+# ainda pior). Interpolação linear direto na taxa cotada de cada pilar, sem
+# bootstrap de cupom, chegou bem mais perto (~13.6bps de diferença — ver
+# curves/linear_rate.py e tests/test_curves/test_linear_rate.py). Pediu
+# explicitamente pra mudar só o relatório de reuniões — a curva usada pra
+# precificar posições/PnL (`curve`, com bootstrap de cupom) não muda.
+LINEAR_RATE_COUNTRIES = {"mexico"}
 
 
 def resolve_maturities(bbg: BbgClient, country: str, curve_tickers: list, calendar) -> list:
@@ -179,6 +192,19 @@ def main() -> None:
             meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon)
             results = strip_meeting_path_from_pillars(curve, curve.pillar_dates, meetings, current_policy_rate)
             report = meeting_pricing_to_dataframe(results)
+        elif country in LINEAR_RATE_COUNTRIES:
+            # +1: mesmo motivo do "else" abaixo — strip_meeting_path precisa de
+            # uma reunião além do horizonte pra ler o câmbio na última que
+            # interessa.
+            meetings = upcoming_meetings(meetings_by_country.get(country, []), valuation_date, horizon + 1)
+            linear_curve = build_linear_rate_curve(
+                valuation_date,
+                pillars,
+                DayCount(cfg["day_count"].replace("ACT/365F", "ACT/365")),
+                Compounding(cfg["compounding"]),
+                calendar,
+            )
+            report = priced_bc_report(linear_curve, meetings, current_policy_rate)
         else:
             # +1: strip_meeting_path needs one meeting past the horizon to read the
             # priced change *at* the last meeting you actually care about (see
