@@ -1,8 +1,14 @@
 """Roda localmente (Bloomberg Terminal ativo): para cada país, monta a curva
-do dia a partir dos tickers da Input_BCs.xlsx e gera o relatório de
-'quanto está precificado' por reunião do Banco Central.
+do dia a partir dos tickers da Input_BCs.xlsx, gera o relatório de 'quanto
+está precificado' por reunião do Banco Central, e em seguida já regenera o
+dashboard (build_dashboard.py) com os dados frescos -- um comando só pro
+dia a dia, sem precisar rodar os dois separados.
 
 python scripts/run_daily_pricing.py
+
+Se quiser só reconstruir o dashboard a partir dos dados já salvos (sem
+bater na Bloomberg de novo -- por exemplo depois de editar um cenário em
+scenarios/<país>/*.yaml), rode scripts/build_dashboard.py sozinho.
 """
 from __future__ import annotations
 
@@ -16,6 +22,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import build_dashboard
 from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.central_banks.stripper import strip_meeting_path_from_pillars
 from emrates.curves.base import Pillar
@@ -192,6 +199,9 @@ def main() -> None:
         policy_path.write_text(json.dumps({"policy_rate": current_policy_rate, "valuation_date": str(valuation_date)}))
 
         print(f"[{country}] {len(report)} reuniões precificadas -> {out_path}")
+
+    print("\nRegenerando o dashboard com os dados de hoje...")
+    build_dashboard.main()
 
 
 if __name__ == "__main__":

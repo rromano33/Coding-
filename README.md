@@ -61,9 +61,15 @@ preferir nomes diferentes):
 ## Uso diário
 
 ```bash
-python scripts/run_daily_pricing.py   # gera Data/processed/priced_bc_<país>_<data>.csv e salva a curva do dia
+python scripts/run_daily_pricing.py   # precifica todos os países E já regenera Data/processed/dashboard.html
 python scripts/run_pnl.py             # compara com a curva do dia anterior salva, gera Data/processed/pnl_<data>.csv
 ```
+
+`run_daily_pricing.py` chama `build_dashboard.py` sozinho no final — não
+precisa rodar os dois. Se quiser só reconstruir o dashboard a partir dos
+dados já salvos (sem bater na Bloomberg de novo — por exemplo depois de
+editar um cenário em `scenarios/<país>/*.yaml`), rode
+`python scripts/build_dashboard.py` isolado.
 
 ## VaR e vol de portfólio (`riskvar/`)
 
