@@ -28,6 +28,7 @@ from emrates.data.excel_loader import InputsBCsLoader
 from emrates.reports.colors import BLUE_DARK, BLUE_LIGHT, GRAY_DARK, GRAY_LIGHT, RED_DARK, RED_LIGHT, diverging_color
 from emrates.scenarios.comparison import hikes_cuts_by_year_table, meeting_comparison_table, vertex_comparison_table
 from emrates.scenarios.curve import build_scenario_curve
+from emrates.scenarios.lab_data import build_lab_skeleton
 from emrates.scenarios.model import load_scenario
 
 SCENARIOS_DIR = Path("scenarios")
@@ -301,6 +302,243 @@ def _heat_td(value: float, domain: float) -> str:
     return f'<td class="heat-cell" style="--cell-light:{color_light};--cell-dark:{color_dark}">{fmt_bps(value)}</td>'
 
 
+def _json_for_script(data) -> str:
+    """json.dumps() só escapa pra sintaxe JSON válida, não pra embutir com
+    segurança dentro de uma tag <script> -- um valor com o texto literal
+    '</script>' fecharia a tag e injetaria HTML/JS arbitrário. Escapar
+    <, > e & pra \\uXXXX (mesma técnica do Django json_script) neutraliza
+    isso. Aqui os valores são todos números/datas computados pelo próprio
+    Python (não texto vindo de planilha do usuário), mas é grátis manter
+    o mesmo hábito seguro do resto do projeto (ver riskvar/html_report.py)."""
+    return json.dumps(data).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+
+
+def build_lab_section_data(settings: dict, processed_dir: Path, country: str, country_label: str) -> dict | None:
+    """Skeleton pra aba interativa de cenário (ver LAB_SCRIPT): o usuário
+    digita um caminho ABSOLUTO de bps por reunião (não um choque relativo
+    ao mercado -- Ricardo, 29/07/2026: 'a surpresa só faz sentido assim')
+    e o navegador recalcula o impacto na hora, sem depender de Python
+    rodando de novo. Ver emrates/scenarios/lab_data.py pro que exatamente
+    é pré-computado aqui vs. o que fica por conta do JS."""
+    curve_path = _latest_curve_path(processed_dir, country)
+    if curve_path is None:
+        return None
+
+    sources = _load_input_sources(settings)
+    if sources is None:
+        return None
+    meetings_by_country, calendars = sources
+
+    curve = load_curve(curve_path, calendars.get(country))
+    horizon = settings["reporting"]["meetings_horizon"]
+    meetings = upcoming_meetings(meetings_by_country.get(country, []), curve.valuation_date, horizon)
+    if not meetings:
+        return None
+
+    current_policy_rate = load_policy_rate(processed_dir, country, curve.valuation_date) or 0.0
+    skeleton = build_lab_skeleton(curve, meetings, current_policy_rate)
+
+    return {"country": country, "label": country_label, "skeleton": skeleton}
+
+
+def render_lab_section(lab_data_list: list[dict]) -> str:
+    if not lab_data_list:
+        return ""
+
+    tab_buttons = "".join(
+        f'<button type="button" class="lab-tab-btn{" lab-tab-active" if i == 0 else ""}" '
+        f'data-country="{d["country"]}">{d["label"]}</button>'
+        for i, d in enumerate(lab_data_list)
+    )
+
+    panels = []
+    for i, d in enumerate(lab_data_list):
+        country = d["country"]
+        skeleton = d["skeleton"]
+        input_rows = "".join(
+            f'<tr><td class="ink-secondary">{m["date"]}</td>'
+            f'<td class="num">{m["market_forward_pct"]:.3f}%</td>'
+            f'<td class="num"><input type="number" class="lab-bps-input" step="1" value="0" data-idx="{j}"></td></tr>'
+            for j, m in enumerate(skeleton["meetings"])
+        )
+        panels.append(f"""
+    <div class="lab-panel{' lab-panel-active' if i == 0 else ''}" id="lab-panel-{country}">
+      <table class="lab-input-table">
+        <thead><tr><th>Reunião</th><th class="num">Mercado hoje</th><th class="num">Seu cenário (Δ bps)</th></tr></thead>
+        <tbody>{input_rows}</tbody>
+      </table>
+      <div class="lab-actions">
+        <button type="button" class="lab-calc-btn" data-country="{country}">Calcular</button>
+        <button type="button" class="lab-reset-btn" data-country="{country}">Limpar</button>
+      </div>
+      <div class="lab-results" id="lab-results-{country}" hidden>
+        <h4>Δ bps por reunião</h4>
+        <div class="panel"><table class="compare">
+          <thead><tr><th>Reunião</th><th class="num">Mercado</th><th class="num">Seu cenário</th>
+            <th class="num">Δ vs. mercado</th><th class="num">Nível (seu cenário)</th></tr></thead>
+          <tbody id="lab-meeting-tbody-{country}"></tbody>
+        </table></div>
+        <h4>Impacto por vértice (contratos usados na curva)</h4>
+        <div class="panel"><table class="compare">
+          <thead><tr><th>Vencimento</th><th class="num">Mercado</th><th class="num">Seu cenário</th>
+            <th class="num">Δ bps</th></tr></thead>
+          <tbody id="lab-vertex-tbody-{country}"></tbody>
+        </table></div>
+      </div>
+      <script type="application/json" id="lab-skeleton-{country}">{_json_for_script(skeleton)}</script>
+    </div>""")
+
+    return f"""
+    <section class="lab-section">
+      <h3>Cenários interativos</h3>
+      <p class="scenario-note">Digite o corte/alta absoluto (bps) que você acha que acontece em cada reunião — não é
+        um choque em cima do que o mercado já precifica, é o caminho inteiro. Clique "Calcular" pra ver o impacto
+        na hora, sem precisar rodar nada de novo.</p>
+      <div class="lab-tabs">{tab_buttons}</div>
+      {"".join(panels)}
+    </section>
+    {LAB_SCRIPT}"""
+
+
+LAB_SCRIPT = """
+<script>
+(function() {
+  function discountFactor(ratePct, tau, compounding) {
+    var r = ratePct / 100;
+    if (compounding === 'linear') return 1 / (1 + r * tau);
+    return Math.pow(1 + r, -tau); // exponential e compounded_daily -- ver conventions/compounding.py
+  }
+
+  function zeroRatePct(df, tau, compounding) {
+    if (compounding === 'linear') return ((1 / df - 1) / tau) * 100;
+    return (Math.pow(df, -1 / tau) - 1) * 100;
+  }
+
+  function fmtBps(v) {
+    var sign = v >= 0 ? '+' : '';
+    return sign + v.toFixed(1);
+  }
+
+  function fmtPct(v) {
+    return v.toFixed(3) + '%';
+  }
+
+  function heatStyle(value, domain) {
+    // Só as custom properties -- o background em si vem da regra
+    // .heat-cell do stylesheet (light usa --cell-light, o media query de
+    // dark mode troca pra --cell-dark). Fixar "background" aqui inline
+    // ganharia do stylesheet e quebraria a troca de tema.
+    var t = Math.max(-1, Math.min(1, value / domain));
+    var light = t >= 0 ? lerpHex('#f0efec', '#2a78d6', t) : lerpHex('#f0efec', '#e34948', -t);
+    var dark = t >= 0 ? lerpHex('#383835', '#3987e5', t) : lerpHex('#383835', '#e66767', -t);
+    return '--cell-light:' + light + ';--cell-dark:' + dark + ';';
+  }
+
+  function lerpHex(c1, c2, t) {
+    var r1 = parseInt(c1.slice(1, 3), 16), g1 = parseInt(c1.slice(3, 5), 16), b1 = parseInt(c1.slice(5, 7), 16);
+    var r2 = parseInt(c2.slice(1, 3), 16), g2 = parseInt(c2.slice(3, 5), 16), b2 = parseInt(c2.slice(5, 7), 16);
+    var r = Math.round(r1 + (r2 - r1) * t), g = Math.round(g1 + (g2 - g1) * t), b = Math.round(b1 + (b2 - b1) * t);
+    return '#' + [r, g, b].map(function(x) { return x.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  function computeLab(country) {
+    var skeleton = JSON.parse(document.getElementById('lab-skeleton-' + country).textContent);
+    var inputs = document.querySelectorAll('#lab-panel-' + country + ' .lab-bps-input');
+    var bps = Array.prototype.map.call(inputs, function(el) { return parseFloat(el.value) || 0; });
+
+    // Níveis absolutos acumulados (%), começando na taxa de política atual --
+    // caminho ABSOLUTO, não choque relativo ao que o mercado precifica.
+    var levels = [];
+    var level = skeleton.current_policy_rate_pct;
+    for (var i = 0; i < skeleton.meetings.length; i++) {
+      level = level + bps[i] / 100;
+      levels.push(level);
+    }
+
+    var dfs = [1.0];
+    for (i = 0; i < skeleton.meetings.length; i++) {
+      var m = skeleton.meetings[i];
+      dfs.push(dfs[i] * discountFactor(levels[i], m.tau, skeleton.compounding));
+    }
+
+    var maxAbsMeetingDelta = 5;
+    var meetingRows = skeleton.meetings.map(function(m, i) {
+      var marketChangeBps = (m.market_forward_pct - (i === 0 ? skeleton.current_policy_rate_pct : skeleton.meetings[i - 1].market_forward_pct)) * 100;
+      var scenarioChangeBps = bps[i];
+      var deltaBps = scenarioChangeBps - marketChangeBps;
+      maxAbsMeetingDelta = Math.max(maxAbsMeetingDelta, Math.abs(deltaBps));
+      return { date: m.date, market_bps: marketChangeBps, scenario_bps: scenarioChangeBps, delta_bps: deltaBps, level_pct: levels[i] };
+    });
+
+    var lastLevel = levels[levels.length - 1];
+    var lastMarket = skeleton.meetings[skeleton.meetings.length - 1].market_forward_pct;
+    var finalShiftPct = lastLevel - lastMarket;
+
+    var maxAbsVertexDelta = 5;
+    var vertexRows = skeleton.vertices.map(function(v) {
+      var df;
+      if (v.segment_index !== null) {
+        df = dfs[v.segment_index - 1] * discountFactor(levels[v.segment_index - 1], v.tau_from_segment_start, skeleton.compounding);
+      } else {
+        var tailRatePct = v.tail_base_forward_pct + finalShiftPct;
+        df = dfs[dfs.length - 1] * discountFactor(tailRatePct, v.tail_tau, skeleton.compounding);
+      }
+      var zeroPct = zeroRatePct(df, v.tau_from_valuation, skeleton.compounding);
+      var deltaBps = (zeroPct - v.market_zero_pct) * 100;
+      maxAbsVertexDelta = Math.max(maxAbsVertexDelta, Math.abs(deltaBps));
+      return { maturity: v.maturity, market_pct: v.market_zero_pct, scenario_pct: zeroPct, delta_bps: deltaBps };
+    });
+
+    renderResults(country, meetingRows, vertexRows, maxAbsMeetingDelta, maxAbsVertexDelta);
+  }
+
+  function renderResults(country, meetingRows, vertexRows, meetingDomain, vertexDomain) {
+    var meetingBody = document.getElementById('lab-meeting-tbody-' + country);
+    meetingBody.innerHTML = meetingRows.map(function(r) {
+      return '<tr><td class="ink-secondary">' + r.date + '</td>' +
+        '<td class="num">' + fmtBps(r.market_bps) + '</td>' +
+        '<td class="num">' + fmtBps(r.scenario_bps) + '</td>' +
+        '<td class="num heat-cell" style="' + heatStyle(r.delta_bps, meetingDomain) + '">' + fmtBps(r.delta_bps) + '</td>' +
+        '<td class="num">' + fmtPct(r.level_pct) + '</td></tr>';
+    }).join('');
+
+    var vertexBody = document.getElementById('lab-vertex-tbody-' + country);
+    vertexBody.innerHTML = vertexRows.map(function(r) {
+      return '<tr><td class="ink-secondary">' + r.maturity + '</td>' +
+        '<td class="num">' + fmtPct(r.market_pct) + '</td>' +
+        '<td class="num">' + fmtPct(r.scenario_pct) + '</td>' +
+        '<td class="num heat-cell" style="' + heatStyle(r.delta_bps, vertexDomain) + '">' + fmtBps(r.delta_bps) + '</td></tr>';
+    }).join('');
+
+    document.getElementById('lab-results-' + country).hidden = false;
+  }
+
+  function resetLab(country) {
+    var inputs = document.querySelectorAll('#lab-panel-' + country + ' .lab-bps-input');
+    Array.prototype.forEach.call(inputs, function(el) { el.value = 0; });
+    var results = document.getElementById('lab-results-' + country);
+    if (results) results.hidden = true;
+  }
+
+  document.querySelectorAll('.lab-calc-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { computeLab(btn.getAttribute('data-country')); });
+  });
+  document.querySelectorAll('.lab-reset-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() { resetLab(btn.getAttribute('data-country')); });
+  });
+  document.querySelectorAll('.lab-tab-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var country = btn.getAttribute('data-country');
+      document.querySelectorAll('.lab-tab-btn').forEach(function(b) { b.classList.remove('lab-tab-active'); });
+      document.querySelectorAll('.lab-panel').forEach(function(p) { p.classList.remove('lab-panel-active'); });
+      btn.classList.add('lab-tab-active');
+      document.getElementById('lab-panel-' + country).classList.add('lab-panel-active');
+    });
+  });
+})();
+</script>"""
+
+
 def main() -> None:
     settings = yaml.safe_load(open("config/settings.yaml", encoding="utf-8"))
     processed_dir = Path(settings["paths"]["processed_dir"])
@@ -324,6 +562,15 @@ def main() -> None:
             scenario_sections_html.append(render_scenario_section(section_data))
     if not scenario_sections_html:
         print("Nenhum cenário em scenarios/<país>/*.yaml (ou Input_BCs.xlsx indisponível) — seção de cenários pulada.")
+
+    lab_data_list = []
+    for c in countries_data:
+        lab_data = build_lab_section_data(settings, processed_dir, c["country"], c["label"])
+        if lab_data is not None:
+            lab_data_list.append(lab_data)
+    lab_section_html = render_lab_section(lab_data_list)
+    if not lab_data_list:
+        print("Sem reuniões/curva suficientes pra aba de cenários interativos — seção pulada.")
 
     # Two separate domains: the heatmap shows the per-meeting change (small,
     # typically single digits to ~20bps), the cards' mini-bar/Acumulado
@@ -458,6 +705,42 @@ def main() -> None:
   table.compare th {{ color: var(--ink-muted); font-weight: 500; font-size: 11px; border-bottom: 1px solid var(--gridline); }}
   table.compare td {{ border-bottom: 1px solid var(--gridline); }}
   footer {{ margin-top: 32px; font-size: 11px; color: var(--ink-muted); }}
+  .lab-section {{ margin-top: 40px; }}
+  .lab-section h3 {{ font-size: 17px; margin: 0 0 4px; }}
+  .lab-tabs {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }}
+  .lab-tab-btn {{
+    font: inherit; font-size: 12px; color: var(--ink-secondary); background: var(--surface-1);
+    border: 1px solid var(--border); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  }}
+  .lab-tab-btn:hover {{ color: var(--ink-primary); border-color: var(--ink-muted); }}
+  .lab-tab-btn.lab-tab-active {{ background: var(--diverge-blue); border-color: var(--diverge-blue); color: #fff; }}
+  .lab-panel {{ display: none; }}
+  .lab-panel.lab-panel-active {{ display: block; }}
+  table.lab-input-table {{
+    border-collapse: collapse; width: 100%; max-width: 480px; font-size: 13px; margin-bottom: 14px;
+  }}
+  table.lab-input-table th, table.lab-input-table td {{
+    padding: 6px 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }}
+  table.lab-input-table th:first-child, table.lab-input-table td:first-child {{ text-align: left; }}
+  table.lab-input-table th {{ color: var(--ink-muted); font-weight: 500; font-size: 11px; border-bottom: 1px solid var(--gridline); }}
+  table.lab-input-table td {{ border-bottom: 1px solid var(--gridline); }}
+  .lab-bps-input {{
+    width: 72px; font: inherit; font-variant-numeric: tabular-nums; text-align: right;
+    background: var(--page); color: var(--ink-primary); border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 8px;
+  }}
+  .lab-bps-input:focus {{ outline: 2px solid var(--diverge-blue); outline-offset: 1px; }}
+  .lab-actions {{ display: flex; gap: 10px; margin-bottom: 20px; }}
+  .lab-calc-btn, .lab-reset-btn {{
+    font: inherit; font-size: 13px; font-weight: 600; border-radius: 8px; padding: 8px 18px; cursor: pointer; border: 1px solid transparent;
+  }}
+  .lab-calc-btn {{ background: var(--diverge-blue); color: #fff; }}
+  .lab-calc-btn:hover {{ opacity: 0.9; }}
+  .lab-reset-btn {{ background: transparent; color: var(--ink-secondary); border-color: var(--border); }}
+  .lab-reset-btn:hover {{ color: var(--ink-primary); border-color: var(--ink-muted); }}
+  .lab-results h4 {{ font-size: 12px; color: var(--ink-muted); font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.02em; margin: 20px 0 8px; }}
 </style>
 </head>
 <body>
@@ -483,6 +766,8 @@ def main() -> None:
   </div>
 
   {''.join(scenario_sections_html)}
+
+  {lab_section_html}
 
   <footer>
     Mapa de calor: bps precificados NAQUELA reunião (implied_change_bps) — não é acumulado.
