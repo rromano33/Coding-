@@ -50,28 +50,39 @@ def _save_fixture_curve(processed_dir: Path) -> None:
     )
 
 
-def test_invalid_scenario_file_is_skipped_not_fatal(tmp_path, monkeypatch):
-    """A scenario yaml whose meeting_date isn't in the modeled horizon (e.g. an
-    unedited exemplo_template.yaml) must not take down the whole dashboard
-    build — it should be skipped with a message, other scenarios still render."""
+def test_lab_section_data_includes_market_change_bps_per_meeting(tmp_path):
+    """build_lab_section_data must pass through lab_data.py's market_change_bps
+    field per meeting -- the dashboard's "Mkt Δbps" column reads it directly
+    (Ricardo, 29/07/2026: quer ver o que o mercado precifica ao lado do
+    cenário digitado, pra comparar direto sem fazer conta)."""
     processed_dir = tmp_path / "processed"
     processed_dir.mkdir()
     _write_workbook(tmp_path / "Input_BCs.xlsx")
     _save_fixture_curve(processed_dir)
-
-    scenarios_dir = tmp_path / "scenarios" / "brazil"
-    scenarios_dir.mkdir(parents=True)
-    (scenarios_dir / "valid.yaml").write_text(
-        f"name: Valid\ncountry: brazil\nshocks:\n  - meeting_date: {MEETINGS[1]}\n    shock_bps: -25\n"
-    )
-    (scenarios_dir / "unedited_template.yaml").write_text(
-        "name: Template\ncountry: brazil\nshocks:\n  - meeting_date: 2099-01-01\n    shock_bps: -25\n"
-    )
-
-    monkeypatch.setattr(build_dashboard, "SCENARIOS_DIR", tmp_path / "scenarios")
     settings = _settings(tmp_path)
 
-    data = build_dashboard.build_scenario_section_data(settings, processed_dir, "brazil", "Brasil")
+    data = build_dashboard.build_lab_section_data(settings, processed_dir, "brazil", "Brasil")
 
     assert data is not None
-    assert list(data["scenario_labels"]) == ["valid"]  # unedited_template.yaml silently skipped
+    meetings = data["skeleton"]["meetings"]
+    assert meetings and all("market_change_bps" in m for m in meetings)
+
+
+def test_render_lab_section_has_n_scenario_columns_and_no_meeting_results_table(tmp_path):
+    """Ricardo (29/07/2026): quer rodar pelo menos 4 cenários alternativos lado
+    a lado, e quer que o resultado do "Calcular" mostre só a tabela de impacto
+    por vértice (a tabela de reunião-a-reunião foi removida -- os cenários já
+    ficam visíveis na própria tabela de input)."""
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+    _write_workbook(tmp_path / "Input_BCs.xlsx")
+    _save_fixture_curve(processed_dir)
+    settings = _settings(tmp_path)
+
+    data = build_dashboard.build_lab_section_data(settings, processed_dir, "brazil", "Brasil")
+    html = build_dashboard.render_lab_section([data])
+
+    assert html.count('class="lab-scenario-name"') == build_dashboard.LAB_N_SCENARIOS
+    assert html.count('class="lab-bps-input"') == build_dashboard.LAB_N_SCENARIOS * len(data["skeleton"]["meetings"])
+    assert "lab-meeting-tbody" not in html
+    assert "lab-vertex-thead-brazil" in html

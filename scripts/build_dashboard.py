@@ -26,12 +26,7 @@ from emrates.data.calendars import CalendarSet
 from emrates.data.curve_store import load_curve
 from emrates.data.excel_loader import InputsBCsLoader
 from emrates.reports.colors import BLUE_DARK, BLUE_LIGHT, GRAY_DARK, GRAY_LIGHT, RED_DARK, RED_LIGHT, diverging_color
-from emrates.scenarios.comparison import hikes_cuts_by_year_table, meeting_comparison_table, vertex_comparison_table
-from emrates.scenarios.curve import build_scenario_curve
 from emrates.scenarios.lab_data import build_lab_skeleton
-from emrates.scenarios.model import load_scenario
-
-SCENARIOS_DIR = Path("scenarios")
 
 # Order matters for layout: LatAm fills row 1 (4 cols), CEMEA fills row 2,
 # with south_africa placed last so it lands in the same column as colombia
@@ -122,28 +117,16 @@ def fmt_bps(v) -> str:
     return f"{v:+.0f}"
 
 
-def render_country_card(c: dict, domain: float) -> str:
+def render_country_card(c: dict) -> str:
     policy_txt = f'{c["policy_rate"] * 100:.3f}%' if c["policy_rate"] is not None else "—"
     rows_html = []
     for row in c["rows"]:
-        bps = row["cumulative_bps"]
-        bar_t = max(-1.0, min(1.0, bps / domain)) if domain else 0.0
-        bar_pct = abs(bar_t) * 50
-        # left:50% anchors the bar's left edge at center and grows rightward (hikes);
-        # right:50% anchors the right edge at center and grows leftward (cuts).
-        bar_side = "left" if bar_t >= 0 else "right"
-        bar_color = "var(--diverge-blue)" if bar_t >= 0 else "var(--diverge-red)"
         rows_html.append(
             f"""
             <tr>
               <td class="ink-secondary">{row['meeting_date']}</td>
               <td class="num">{fmt_bps(row['implied_change_bps'])}</td>
-              <td class="num cumulative-cell">
-                <div class="mini-bar-track">
-                  <div class="mini-bar" style="background:{bar_color};width:{bar_pct:.1f}%;{bar_side}:50%"></div>
-                </div>
-                <span class="mini-bar-value">{fmt_bps(bps)}</span>
-              </td>
+              <td class="num">{fmt_bps(row['cumulative_bps'])}</td>
               <td class="num {'ink-muted' if row['delta_1d'] is None else ''}">{fmt_bps(row['delta_1d'])}</td>
               <td class="num {'ink-muted' if row['delta_5d'] is None else ''}">{fmt_bps(row['delta_5d'])}</td>
             </tr>"""
@@ -173,9 +156,10 @@ def _latest_curve_path(processed_dir: Path, country: str) -> Path | None:
 
 def _load_input_sources(settings: dict):
     """Loads Input_BCs.xlsx (meeting dates + holiday calendars) once, shared
-    across every country's scenario section. Returns (meetings_by_country,
-    calendars), or None if the file isn't available here — the scenario
-    section is skipped in that case, base dashboard still renders."""
+    across every country's interactive scenario lab. Returns
+    (meetings_by_country, calendars), or None if the file isn't available
+    here — the lab section is skipped in that case, base dashboard still
+    renders."""
     column_map = {
         "dates": settings["dates_columns"],
         "dates_sheet": settings["sheets"]["dates_sheet"],
@@ -191,115 +175,6 @@ def _load_input_sources(settings: dict):
     except FileNotFoundError:
         return None
     return meetings_by_country, calendars
-
-
-def build_scenario_section_data(settings: dict, processed_dir: Path, country: str, country_label: str) -> dict | None:
-    scenario_files = sorted((SCENARIOS_DIR / country).glob("*.yaml")) if (SCENARIOS_DIR / country).is_dir() else []
-    if not scenario_files:
-        return None
-
-    curve_path = _latest_curve_path(processed_dir, country)
-    if curve_path is None:
-        return None
-
-    sources = _load_input_sources(settings)
-    if sources is None:
-        return None
-    meetings_by_country, calendars = sources
-
-    curve = load_curve(curve_path, calendars.get(country))
-    horizon = settings["reporting"]["meetings_horizon"]
-    meetings = upcoming_meetings(meetings_by_country.get(country, []), curve.valuation_date, horizon + 1)
-    if len(meetings) < 2:
-        return None
-
-    current_policy_rate = load_policy_rate(processed_dir, country, curve.valuation_date) or 0.0
-
-    scenario_curves = {}
-    scenario_labels = {}
-    for path in scenario_files:
-        try:
-            scenario = load_scenario(path)
-            scenario_curves[path.stem] = build_scenario_curve(curve, meetings, scenario)
-            scenario_labels[path.stem] = scenario.name
-        except ValueError as exc:
-            # e.g. an exemplo_template.yaml whose placeholder meeting_date
-            # hasn't been edited yet — skip just this one file rather than
-            # crashing the whole dashboard build.
-            print(f"[{country}] pulei cenário {path.name}: {exc}")
-
-    if not scenario_curves:
-        return None
-
-    meeting_df = meeting_comparison_table(curve, scenario_curves, meetings, current_policy_rate)
-    year_df = hikes_cuts_by_year_table(meeting_df)
-    vertex_df = vertex_comparison_table(curve, scenario_curves)
-
-    return {
-        "label": country_label,
-        "scenario_labels": scenario_labels,
-        "meeting_df": meeting_df,
-        "year_df": year_df,
-        "vertex_df": vertex_df,
-    }
-
-
-def render_scenario_section(data: dict) -> str:
-    slugs = list(data["scenario_labels"])
-    header_cells = "".join(
-        f'<th class="num" title="{data["scenario_labels"][s]}">{s}</th>' for s in slugs
-    )
-
-    max_abs_meeting = max((abs(v) for s in slugs for v in data["meeting_df"][s]), default=1.0)
-    domain_meeting = max(15.0, max_abs_meeting)
-    meeting_rows = []
-    for _, row in data["meeting_df"].iterrows():
-        cells = "".join(_heat_td(row[s], domain_meeting) for s in slugs)
-        meeting_rows.append(f'<tr><td class="ink-secondary">{row["meeting_date"]}</td><td class="num">{fmt_bps(row["mkt"])}</td>{cells}</tr>')
-
-    max_abs_year = max((abs(v) for s in slugs for v in data["year_df"][s]), default=1.0)
-    domain_year = max(15.0, max_abs_year)
-    year_rows = []
-    for _, row in data["year_df"].iterrows():
-        cells = "".join(_heat_td(row[s], domain_year) for s in slugs)
-        year_rows.append(f'<tr><td class="ink-secondary">{int(row["year"])}</td><td class="num">{fmt_bps(row["mkt"])}</td>{cells}</tr>')
-
-    max_abs_vertex = max((abs(row[f"{s}_delta_bps"]) for _, row in data["vertex_df"].iterrows() for s in slugs), default=1.0)
-    domain_vertex = max(5.0, max_abs_vertex)
-    vertex_rows = []
-    for _, row in data["vertex_df"].iterrows():
-        cells = "".join(_heat_td(row[f"{s}_delta_bps"], domain_vertex) for s in slugs)
-        vertex_rows.append(f'<tr><td class="ink-secondary">{row["maturity"]}</td><td class="num">{row["mkt_pct"]:.3f}%</td>{cells}</tr>')
-
-    return f"""
-    <section class="scenario-section">
-      <h3>{data['label']} — cenários</h3>
-      <p class="scenario-note">Colunas: mkt (precificado hoje) + cada cenário em scenarios/&lt;país&gt;/*.yaml (passe o mouse no cabeçalho pro nome completo).</p>
-
-      <h4>Bps por reunião</h4>
-      <div class="panel"><table class="compare">
-        <thead><tr><th>Reunião</th><th class="num">mkt</th>{header_cells}</tr></thead>
-        <tbody>{"".join(meeting_rows)}</tbody>
-      </table></div>
-
-      <h4>Hikes/cuts por ano</h4>
-      <div class="panel"><table class="compare">
-        <thead><tr><th>Ano</th><th class="num">mkt</th>{header_cells}</tr></thead>
-        <tbody>{"".join(year_rows)}</tbody>
-      </table></div>
-
-      <h4>Impacto por vértice (Δ bps vs. mkt)</h4>
-      <div class="panel"><table class="compare">
-        <thead><tr><th>Vencimento</th><th class="num">mkt</th>{header_cells}</tr></thead>
-        <tbody>{"".join(vertex_rows)}</tbody>
-      </table></div>
-    </section>"""
-
-
-def _heat_td(value: float, domain: float) -> str:
-    color_light = diverging_color(value, domain, RED_LIGHT, GRAY_LIGHT, BLUE_LIGHT)
-    color_dark = diverging_color(value, domain, RED_DARK, GRAY_DARK, BLUE_DARK)
-    return f'<td class="heat-cell" style="--cell-light:{color_light};--cell-dark:{color_dark}">{fmt_bps(value)}</td>'
 
 
 def _json_for_script(data) -> str:
@@ -341,6 +216,14 @@ def build_lab_section_data(settings: dict, processed_dir: Path, country: str, co
     return {"country": country, "label": country_label, "skeleton": skeleton}
 
 
+# Ricardo (29/07/2026): "gostaria de poder rodar pelo menos 4 cenários
+# alternativos" — colunas de cenário fixas na tabela de input, cada uma com
+# nome editável (ver LAB_SCRIPT/renderVertexResults sobre por que o nome
+# vai por textContent, não innerHTML: é texto livre digitado pelo usuário).
+LAB_N_SCENARIOS = 4
+DEFAULT_SCENARIO_NAMES = [f"Cenário {i + 1}" for i in range(LAB_N_SCENARIOS)]
+
+
 def render_lab_section(lab_data_list: list[dict]) -> str:
     if not lab_data_list:
         return ""
@@ -351,6 +234,11 @@ def render_lab_section(lab_data_list: list[dict]) -> str:
         for i, d in enumerate(lab_data_list)
     )
 
+    scenario_header_cells = "".join(
+        f'<th class="num"><input type="text" class="lab-scenario-name" data-scenario="{s}" value="{name}"></th>'
+        for s, name in enumerate(DEFAULT_SCENARIO_NAMES)
+    )
+
     panels = []
     for i, d in enumerate(lab_data_list):
         country = d["country"]
@@ -358,30 +246,32 @@ def render_lab_section(lab_data_list: list[dict]) -> str:
         input_rows = "".join(
             f'<tr><td class="ink-secondary">{m["date"]}</td>'
             f'<td class="num">{m["market_forward_pct"]:.3f}%</td>'
-            f'<td class="num"><input type="number" class="lab-bps-input" step="1" value="0" data-idx="{j}"></td></tr>'
+            f'<td class="num ink-muted">{fmt_bps(m["market_change_bps"])}</td>'
+            + "".join(
+                f'<td class="num"><input type="number" class="lab-bps-input" step="1" value="0" '
+                f'data-idx="{j}" data-scenario="{s}"></td>'
+                for s in range(LAB_N_SCENARIOS)
+            )
+            + "</tr>"
             for j, m in enumerate(skeleton["meetings"])
         )
         panels.append(f"""
     <div class="lab-panel{' lab-panel-active' if i == 0 else ''}" id="lab-panel-{country}">
-      <table class="lab-input-table">
-        <thead><tr><th>Reunião</th><th class="num">Mercado hoje</th><th class="num">Seu cenário (Δ bps)</th></tr></thead>
-        <tbody>{input_rows}</tbody>
-      </table>
+      <div class="panel lab-input-panel">
+        <table class="lab-input-table">
+          <thead><tr><th>Reunião</th><th class="num">Mercado hoje</th><th class="num">Mkt Δbps</th>
+            {scenario_header_cells}</tr></thead>
+          <tbody>{input_rows}</tbody>
+        </table>
+      </div>
       <div class="lab-actions">
         <button type="button" class="lab-calc-btn" data-country="{country}">Calcular</button>
         <button type="button" class="lab-reset-btn" data-country="{country}">Limpar</button>
       </div>
       <div class="lab-results" id="lab-results-{country}" hidden>
-        <h4>Δ bps por reunião</h4>
-        <div class="panel"><table class="compare">
-          <thead><tr><th>Reunião</th><th class="num">Mercado</th><th class="num">Seu cenário</th>
-            <th class="num">Δ vs. mercado</th><th class="num">Nível (seu cenário)</th></tr></thead>
-          <tbody id="lab-meeting-tbody-{country}"></tbody>
-        </table></div>
         <h4>Impacto por vértice (contratos usados na curva)</h4>
         <div class="panel"><table class="compare">
-          <thead><tr><th>Vencimento</th><th class="num">Mercado</th><th class="num">Seu cenário</th>
-            <th class="num">Δ bps</th></tr></thead>
+          <thead><tr id="lab-vertex-thead-{country}"></tr></thead>
           <tbody id="lab-vertex-tbody-{country}"></tbody>
         </table></div>
       </div>
@@ -391,9 +281,10 @@ def render_lab_section(lab_data_list: list[dict]) -> str:
     return f"""
     <section class="lab-section">
       <h3>Cenários interativos</h3>
-      <p class="scenario-note">Digite o corte/alta absoluto (bps) que você acha que acontece em cada reunião — não é
-        um choque em cima do que o mercado já precifica, é o caminho inteiro. Clique "Calcular" pra ver o impacto
-        na hora, sem precisar rodar nada de novo.</p>
+      <p class="scenario-note">Digite o corte/alta absoluto (bps) que você acha que acontece em cada reunião, em até
+        {LAB_N_SCENARIOS} cenários alternativos (nomeie as colunas como quiser) — não é um choque em cima do que o
+        mercado já precifica, é o caminho inteiro (o "Mkt Δbps" ao lado é só a referência do que o mercado precifica
+        naquela reunião). Clique "Calcular" pra ver o impacto por vértice na hora, sem precisar rodar nada de novo.</p>
       <div class="lab-tabs">{tab_buttons}</div>
       {"".join(panels)}
     </section>
@@ -441,13 +332,11 @@ LAB_SCRIPT = """
     return '#' + [r, g, b].map(function(x) { return x.toString(16).padStart(2, '0'); }).join('');
   }
 
-  function computeLab(country) {
-    var skeleton = JSON.parse(document.getElementById('lab-skeleton-' + country).textContent);
-    var inputs = document.querySelectorAll('#lab-panel-' + country + ' .lab-bps-input');
-    var bps = Array.prototype.map.call(inputs, function(el) { return parseFloat(el.value) || 0; });
-
-    // Níveis absolutos acumulados (%), começando na taxa de política atual --
-    // caminho ABSOLUTO, não choque relativo ao que o mercado precifica.
+  // Roda o mesmo cenário absoluto (bps por reunião) contra o skeleton e
+  // devolve só o impacto por vértice -- as reuniões já ficam visíveis na
+  // própria tabela de input (com o Mkt Δbps ao lado pra comparar), então o
+  // resultado do "Calcular" não repete isso (Ricardo, 29/07/2026).
+  function computeScenario(skeleton, bps) {
     var levels = [];
     var level = skeleton.current_policy_rate_pct;
     for (var i = 0; i < skeleton.meetings.length; i++) {
@@ -461,21 +350,11 @@ LAB_SCRIPT = """
       dfs.push(dfs[i] * discountFactor(levels[i], m.tau, skeleton.compounding));
     }
 
-    var maxAbsMeetingDelta = 5;
-    var meetingRows = skeleton.meetings.map(function(m, i) {
-      var marketChangeBps = (m.market_forward_pct - (i === 0 ? skeleton.current_policy_rate_pct : skeleton.meetings[i - 1].market_forward_pct)) * 100;
-      var scenarioChangeBps = bps[i];
-      var deltaBps = scenarioChangeBps - marketChangeBps;
-      maxAbsMeetingDelta = Math.max(maxAbsMeetingDelta, Math.abs(deltaBps));
-      return { date: m.date, market_bps: marketChangeBps, scenario_bps: scenarioChangeBps, delta_bps: deltaBps, level_pct: levels[i] };
-    });
-
     var lastLevel = levels[levels.length - 1];
     var lastMarket = skeleton.meetings[skeleton.meetings.length - 1].market_forward_pct;
     var finalShiftPct = lastLevel - lastMarket;
 
-    var maxAbsVertexDelta = 5;
-    var vertexRows = skeleton.vertices.map(function(v) {
+    return skeleton.vertices.map(function(v) {
       var df;
       if (v.segment_index !== null) {
         df = dfs[v.segment_index - 1] * discountFactor(levels[v.segment_index - 1], v.tau_from_segment_start, skeleton.compounding);
@@ -485,30 +364,60 @@ LAB_SCRIPT = """
       }
       var zeroPct = zeroRatePct(df, v.tau_from_valuation, skeleton.compounding);
       var deltaBps = (zeroPct - v.market_zero_pct) * 100;
-      maxAbsVertexDelta = Math.max(maxAbsVertexDelta, Math.abs(deltaBps));
       return { maturity: v.maturity, market_pct: v.market_zero_pct, scenario_pct: zeroPct, delta_bps: deltaBps };
     });
-
-    renderResults(country, meetingRows, vertexRows, maxAbsMeetingDelta, maxAbsVertexDelta);
   }
 
-  function renderResults(country, meetingRows, vertexRows, meetingDomain, vertexDomain) {
-    var meetingBody = document.getElementById('lab-meeting-tbody-' + country);
-    meetingBody.innerHTML = meetingRows.map(function(r) {
-      return '<tr><td class="ink-secondary">' + r.date + '</td>' +
-        '<td class="num">' + fmtBps(r.market_bps) + '</td>' +
-        '<td class="num">' + fmtBps(r.scenario_bps) + '</td>' +
-        '<td class="num heat-cell" style="' + heatStyle(r.delta_bps, meetingDomain) + '">' + fmtBps(r.delta_bps) + '</td>' +
-        '<td class="num">' + fmtPct(r.level_pct) + '</td></tr>';
-    }).join('');
+  function computeLab(country) {
+    var skeleton = JSON.parse(document.getElementById('lab-skeleton-' + country).textContent);
+    var scenarioNames = Array.prototype.map.call(
+      document.querySelectorAll('#lab-panel-' + country + ' .lab-scenario-name'),
+      function(el) { return (el.value || '').trim() || 'Cenário'; }
+    );
 
-    var vertexBody = document.getElementById('lab-vertex-tbody-' + country);
-    vertexBody.innerHTML = vertexRows.map(function(r) {
-      return '<tr><td class="ink-secondary">' + r.maturity + '</td>' +
-        '<td class="num">' + fmtPct(r.market_pct) + '</td>' +
-        '<td class="num">' + fmtPct(r.scenario_pct) + '</td>' +
-        '<td class="num heat-cell" style="' + heatStyle(r.delta_bps, vertexDomain) + '">' + fmtBps(r.delta_bps) + '</td></tr>';
+    var scenarioVertices = scenarioNames.map(function(name, s) {
+      var inputs = document.querySelectorAll('#lab-panel-' + country + ' .lab-bps-input[data-scenario="' + s + '"]');
+      var bps = Array.prototype.map.call(inputs, function(el) { return parseFloat(el.value) || 0; });
+      return computeScenario(skeleton, bps);
+    });
+
+    var domain = 5;
+    scenarioVertices.forEach(function(vertices) {
+      vertices.forEach(function(v) { domain = Math.max(domain, Math.abs(v.delta_bps)); });
+    });
+
+    renderVertexResults(country, skeleton, scenarioNames, scenarioVertices, domain);
+  }
+
+  function renderVertexResults(country, skeleton, scenarioNames, scenarioVertices, domain) {
+    // Cabeçalho via createElement/textContent (não innerHTML) -- os nomes
+    // dos cenários são texto livre digitado pelo usuário, então concatenar
+    // em innerHTML aqui seria um self-XSS real.
+    var thead = document.getElementById('lab-vertex-thead-' + country);
+    while (thead.firstChild) thead.removeChild(thead.firstChild);
+    [['Vencimento', false], ['Mercado', true]].forEach(function(pair) {
+      var th = document.createElement('th');
+      if (pair[1]) th.className = 'num';
+      th.textContent = pair[0];
+      thead.appendChild(th);
+    });
+    scenarioNames.forEach(function(name) {
+      var th = document.createElement('th');
+      th.className = 'num';
+      th.textContent = name;
+      thead.appendChild(th);
+    });
+
+    var rowsHtml = skeleton.vertices.map(function(v, i) {
+      var cells = '<td class="ink-secondary">' + v.maturity + '</td>' +
+        '<td class="num">' + fmtPct(v.market_zero_pct) + '</td>';
+      for (var s = 0; s < scenarioVertices.length; s++) {
+        var r = scenarioVertices[s][i];
+        cells += '<td class="num heat-cell" style="' + heatStyle(r.delta_bps, domain) + '">' + fmtBps(r.delta_bps) + '</td>';
+      }
+      return '<tr>' + cells + '</tr>';
     }).join('');
+    document.getElementById('lab-vertex-tbody-' + country).innerHTML = rowsHtml;
 
     document.getElementById('lab-results-' + country).hidden = false;
   }
@@ -555,14 +464,6 @@ def main() -> None:
         print("Nenhum país com dado salvo — rode run_daily_pricing.py primeiro.")
         return
 
-    scenario_sections_html = []
-    for c in countries_data:
-        section_data = build_scenario_section_data(settings, processed_dir, c["country"], c["label"])
-        if section_data is not None:
-            scenario_sections_html.append(render_scenario_section(section_data))
-    if not scenario_sections_html:
-        print("Nenhum cenário em scenarios/<país>/*.yaml (ou Input_BCs.xlsx indisponível) — seção de cenários pulada.")
-
     lab_data_list = []
     for c in countries_data:
         lab_data = build_lab_section_data(settings, processed_dir, c["country"], c["label"])
@@ -572,20 +473,11 @@ def main() -> None:
     if not lab_data_list:
         print("Sem reuniões/curva suficientes pra aba de cenários interativos — seção pulada.")
 
-    # Two separate domains: the heatmap shows the per-meeting change (small,
-    # typically single digits to ~20bps), the cards' mini-bar/Acumulado
-    # column shows the cumulative change (grows across the 8 meetings) — one
-    # shared domain would wash out the heatmap's colors.
     max_abs_meeting = max(
         (abs(row["implied_change_bps"]) for c in countries_data for row in c["rows"] if row["implied_change_bps"] == row["implied_change_bps"]),
         default=1.0,
     )
     domain_meeting = max(15.0, max_abs_meeting)
-    max_abs_cumulative = max(
-        (abs(row["cumulative_bps"]) for c in countries_data for row in c["rows"] if row["cumulative_bps"] == row["cumulative_bps"]),
-        default=1.0,
-    )
-    domain_cumulative = max(30.0, max_abs_cumulative)
 
     # Countries as columns, meetings (ordinal — 1ª, 2ª, ...) as rows. Ordinal
     # labels rather than calendar months: each country's meetings fall on
@@ -624,7 +516,7 @@ def main() -> None:
         history_note = '<p class="history-note">Δ 5d ainda não disponível — precisa de 5 dias de histórico acumulado.</p>'
 
     generated_at = countries_data[0]["as_of"]
-    cards_html = "".join(render_country_card(c, domain_cumulative) for c in countries_data)
+    cards_html = "".join(render_country_card(c) for c in countries_data)
 
     html = f"""<!doctype html>
 <html lang="pt-br">
@@ -661,7 +553,7 @@ def main() -> None:
   .legend {{ display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--ink-secondary); margin-bottom: 12px; }}
   .legend-bar {{ width: 140px; height: 10px; border-radius: 5px;
     background: linear-gradient(90deg, var(--diverge-red), var(--diverge-mid), var(--diverge-blue)); }}
-  .heat-scroll {{ overflow-x: auto; background: var(--surface-1); border: 1px solid var(--border);
+  .heat-scroll {{ overflow-x: auto; max-width: 640px; background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 12px; padding: 16px; margin-bottom: 32px; }}
   table.heatmap {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
   table.heatmap th, table.heatmap td {{ padding: 8px 10px; text-align: center; white-space: nowrap; }}
@@ -675,7 +567,7 @@ def main() -> None:
   /* Fixed 4 columns (not auto-fill) so layout order is predictable: row 1 is
      LatAm, row 2 is CEMEA, and south_africa (last in COUNTRIES) lands in
      colombia's column, directly below it. */
-  .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }}
+  .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; max-width: 900px; }}
   @media (max-width: 1100px) {{ .grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 560px) {{ .grid {{ grid-template-columns: 1fr; }} }}
   .card {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }}
@@ -686,16 +578,7 @@ def main() -> None:
     padding: 4px 6px; border-bottom: 1px solid var(--gridline); }}
   table.country-table td {{ padding: 6px; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; }}
   .num {{ text-align: right; }}
-  .cumulative-cell {{ position: relative; min-width: 90px; }}
-  .mini-bar-track {{ position: relative; height: 10px; background: var(--gridline); border-radius: 5px;
-    margin-bottom: 2px; overflow: hidden; }}
-  .mini-bar {{ position: absolute; top: 0; height: 100%; border-radius: 4px; }}
-  .mini-bar-value {{ font-size: 11px; color: var(--ink-secondary); }}
-  .scenario-section {{ margin-top: 40px; }}
-  .scenario-section h3 {{ font-size: 17px; margin: 0 0 4px; }}
   .scenario-note {{ font-size: 12px; color: var(--ink-muted); margin: 0 0 16px; }}
-  .scenario-section h4 {{ font-size: 12px; color: var(--ink-muted); font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.02em; margin: 20px 0 8px; }}
   .panel {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
     padding: 16px; overflow-x: auto; margin-bottom: 8px; }}
   table.compare {{ border-collapse: collapse; width: 100%; font-size: 13px; }}
@@ -705,7 +588,7 @@ def main() -> None:
   table.compare th {{ color: var(--ink-muted); font-weight: 500; font-size: 11px; border-bottom: 1px solid var(--gridline); }}
   table.compare td {{ border-bottom: 1px solid var(--gridline); }}
   footer {{ margin-top: 32px; font-size: 11px; color: var(--ink-muted); }}
-  .lab-section {{ margin-top: 40px; }}
+  .lab-section {{ margin-top: 40px; max-width: 900px; }}
   .lab-section h3 {{ font-size: 17px; margin: 0 0 4px; }}
   .lab-tabs {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }}
   .lab-tab-btn {{
@@ -716,8 +599,9 @@ def main() -> None:
   .lab-tab-btn.lab-tab-active {{ background: var(--diverge-blue); border-color: var(--diverge-blue); color: #fff; }}
   .lab-panel {{ display: none; }}
   .lab-panel.lab-panel-active {{ display: block; }}
+  .lab-input-panel {{ margin-bottom: 14px; }}
   table.lab-input-table {{
-    border-collapse: collapse; width: 100%; max-width: 480px; font-size: 13px; margin-bottom: 14px;
+    border-collapse: collapse; width: 100%; font-size: 13px;
   }}
   table.lab-input-table th, table.lab-input-table td {{
     padding: 6px 10px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
@@ -726,11 +610,18 @@ def main() -> None:
   table.lab-input-table th {{ color: var(--ink-muted); font-weight: 500; font-size: 11px; border-bottom: 1px solid var(--gridline); }}
   table.lab-input-table td {{ border-bottom: 1px solid var(--gridline); }}
   .lab-bps-input {{
-    width: 72px; font: inherit; font-variant-numeric: tabular-nums; text-align: right;
+    width: 64px; font: inherit; font-variant-numeric: tabular-nums; text-align: right;
     background: var(--page); color: var(--ink-primary); border: 1px solid var(--border); border-radius: 6px;
     padding: 4px 8px;
   }}
   .lab-bps-input:focus {{ outline: 2px solid var(--diverge-blue); outline-offset: 1px; }}
+  .lab-scenario-name {{
+    width: 100px; font: inherit; font-size: 11px; font-weight: 500; text-align: right;
+    background: transparent; color: var(--ink-muted); border: 1px solid transparent; border-radius: 6px;
+    padding: 2px 6px;
+  }}
+  .lab-scenario-name:hover, .lab-scenario-name:focus {{ background: var(--page); border-color: var(--border); color: var(--ink-primary); }}
+  .lab-scenario-name:focus {{ outline: 2px solid var(--diverge-blue); outline-offset: 1px; }}
   .lab-actions {{ display: flex; gap: 10px; margin-bottom: 20px; }}
   .lab-calc-btn, .lab-reset-btn {{
     font: inherit; font-size: 13px; font-weight: 600; border-radius: 8px; padding: 8px 18px; cursor: pointer; border: 1px solid transparent;
@@ -764,8 +655,6 @@ def main() -> None:
   <div class="grid">
     {cards_html}
   </div>
-
-  {''.join(scenario_sections_html)}
 
   {lab_section_html}
 

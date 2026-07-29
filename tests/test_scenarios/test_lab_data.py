@@ -29,6 +29,17 @@ def test_skeleton_has_one_meeting_entry_per_meeting_with_correct_tau_and_forward
     )
 
 
+def test_meeting_market_change_bps_is_delta_vs_previous_segment_not_cumulative():
+    curve = _curve(MEETINGS, rate=0.10)  # curva flat -- toda mudança vem só da taxa de política inicial
+    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+
+    # 1a reunião: mercado (flat 10%) vs taxa de política atual (9.5%) -> +50bps
+    assert skeleton["meetings"][0]["market_change_bps"] == pytest.approx(50.0, abs=1e-6)
+    # reuniões seguintes: curva flat -> forward igual ao segmento anterior -> 0bps
+    assert skeleton["meetings"][1]["market_change_bps"] == pytest.approx(0.0, abs=1e-6)
+    assert skeleton["meetings"][2]["market_change_bps"] == pytest.approx(0.0, abs=1e-6)
+
+
 def test_skeleton_top_level_fields():
     curve = _curve(MEETINGS)
     skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)

@@ -67,9 +67,13 @@ python scripts/run_pnl.py             # compara com a curva do dia anterior salv
 
 `run_daily_pricing.py` chama `build_dashboard.py` sozinho no final — não
 precisa rodar os dois. Se quiser só reconstruir o dashboard a partir dos
-dados já salvos (sem bater na Bloomberg de novo — por exemplo depois de
-editar um cenário em `scenarios/<país>/*.yaml`), rode
+dados já salvos (sem bater na Bloomberg de novo), rode
 `python scripts/build_dashboard.py` isolado.
+
+O dashboard inclui uma aba "Cenários interativos" por país — você digita
+até 4 cenários alternativos (caminho absoluto de bps por reunião, não um
+choque relativo ao mercado) e o navegador recalcula o impacto por vértice
+na hora, sem precisar rodar nada de novo em Python.
 
 ## VaR e vol de portfólio (`riskvar/`)
 

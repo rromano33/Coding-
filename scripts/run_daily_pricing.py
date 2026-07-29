@@ -7,8 +7,7 @@ dia a dia, sem precisar rodar os dois separados.
 python scripts/run_daily_pricing.py
 
 Se quiser só reconstruir o dashboard a partir dos dados já salvos (sem
-bater na Bloomberg de novo -- por exemplo depois de editar um cenário em
-scenarios/<país>/*.yaml), rode scripts/build_dashboard.py sozinho.
+bater na Bloomberg de novo), rode scripts/build_dashboard.py sozinho.
 """
 from __future__ import annotations
 

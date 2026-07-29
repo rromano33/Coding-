@@ -34,14 +34,21 @@ def build_lab_skeleton(curve: DiscountCurve, meetings: list[date], current_polic
     boundary_dates = [curve.valuation_date] + meetings
 
     meeting_skeleton = []
+    prev_market_pct = current_policy_rate * 100
     for i in range(1, len(boundary_dates)):
+        market_forward_pct = curve.forward_rate(boundary_dates[i - 1], boundary_dates[i]) * 100
         meeting_skeleton.append(
             {
                 "date": boundary_dates[i].isoformat(),
                 "tau": curve.tau(boundary_dates[i - 1], boundary_dates[i]),
-                "market_forward_pct": curve.forward_rate(boundary_dates[i - 1], boundary_dates[i]) * 100,
+                "market_forward_pct": market_forward_pct,
+                # O que o mercado já precifica NAQUELA reunião (não acumulado) --
+                # mostrado ao lado do input pra comparar direto com o cenário
+                # discreto que o usuário vai digitar (Ricardo, 29/07/2026).
+                "market_change_bps": (market_forward_pct - prev_market_pct) * 100,
             }
         )
+        prev_market_pct = market_forward_pct
 
     last_boundary = boundary_dates[-1]
     vertex_skeleton = []
