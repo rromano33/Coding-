@@ -17,32 +17,58 @@ def _curve(pillar_dates, rate=0.10) -> DiscountCurve:
     return DiscountCurve(VALUATION_DATE, pillar_dates, dfs, DayCount.ACT_365, Compounding.EXPONENTIAL, None)
 
 
-def test_skeleton_has_one_meeting_entry_per_meeting_with_correct_tau_and_forward():
+def _reports(meetings=MEETINGS, implied_change_bps=None):
+    """meeting_reports fixture -- mesma forma de priced_bc_<país>_<data>.csv
+    (meeting_date/implied_change_bps/cumulative_change_from_spot_bps), a
+    fonte de verdade que build_lab_skeleton agora usa em vez de recomputar
+    via curve.forward_rate (ver docstring do módulo)."""
+    if implied_change_bps is None:
+        implied_change_bps = [10.0] * len(meetings)
+    cumulative, running = [], 0.0
+    reports = []
+    for m, chg in zip(meetings, implied_change_bps):
+        running += chg
+        reports.append({"meeting_date": m, "implied_change_bps": chg, "cumulative_change_from_spot_bps": running})
+        cumulative.append(running)
+    return reports
+
+
+def test_skeleton_has_one_meeting_entry_per_meeting_with_correct_tau():
     curve = _curve(MEETINGS)
-    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
 
     assert [m["date"] for m in skeleton["meetings"]] == [d.isoformat() for d in MEETINGS]
     assert skeleton["meetings"][0]["tau"] == pytest.approx(curve.tau(VALUATION_DATE, MEETINGS[0]))
     assert skeleton["meetings"][1]["tau"] == pytest.approx(curve.tau(MEETINGS[0], MEETINGS[1]))
-    assert skeleton["meetings"][0]["market_forward_pct"] == pytest.approx(
-        curve.forward_rate(VALUATION_DATE, MEETINGS[0]) * 100
-    )
 
 
-def test_meeting_market_change_bps_is_delta_vs_previous_segment_not_cumulative():
-    curve = _curve(MEETINGS, rate=0.10)  # curva flat -- toda mudança vem só da taxa de política inicial
-    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+def test_meeting_market_fields_come_from_report_not_recomputed_from_curve():
+    """Regression (Ricardo, 29/07/2026): a tabela de cards e a de cenários
+    interativos mostravam bps/taxa diferentes pra mesma reunião porque essa
+    função recomputava via curve.forward_rate, ignorando o priced_bc CSV
+    (que pode vir de NSS, split 65/35 ou FRA direto, nunca forward_rate
+    puro). Agora market_change_bps/market_forward_pct têm que ser um
+    pass-through exato do relatório -- inclusive quando isso diverge muito
+    do que a curva "crua" implicaria (curva flat nesse teste: forward_rate
+    daria 0bps em toda reunião, mas o relatório sintético abaixo diz outra
+    coisa, e é isso que tem que aparecer no skeleton)."""
+    curve = _curve(MEETINGS, rate=0.10)  # curva flat -- forward_rate cru daria 0bps sempre
+    reports = _reports(implied_change_bps=[-17.0, 8.0, 25.0])
 
-    # 1a reunião: mercado (flat 10%) vs taxa de política atual (9.5%) -> +50bps
-    assert skeleton["meetings"][0]["market_change_bps"] == pytest.approx(50.0, abs=1e-6)
-    # reuniões seguintes: curva flat -> forward igual ao segmento anterior -> 0bps
-    assert skeleton["meetings"][1]["market_change_bps"] == pytest.approx(0.0, abs=1e-6)
-    assert skeleton["meetings"][2]["market_change_bps"] == pytest.approx(0.0, abs=1e-6)
+    skeleton = build_lab_skeleton(curve, reports, current_policy_rate=0.095)
+
+    assert skeleton["meetings"][0]["market_change_bps"] == pytest.approx(-17.0)
+    assert skeleton["meetings"][1]["market_change_bps"] == pytest.approx(8.0)
+    assert skeleton["meetings"][2]["market_change_bps"] == pytest.approx(25.0)
+    # market_forward_pct = current_policy_rate + cumulative_change_from_spot_bps
+    assert skeleton["meetings"][0]["market_forward_pct"] == pytest.approx(9.5 - 0.17)
+    assert skeleton["meetings"][1]["market_forward_pct"] == pytest.approx(9.5 - 0.17 + 0.08)
+    assert skeleton["meetings"][2]["market_forward_pct"] == pytest.approx(9.5 - 0.17 + 0.08 + 0.25)
 
 
 def test_skeleton_top_level_fields():
     curve = _curve(MEETINGS)
-    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
     assert skeleton["valuation_date"] == VALUATION_DATE.isoformat()
     assert skeleton["compounding"] == "exponential"
     assert skeleton["current_policy_rate_pct"] == pytest.approx(9.5)
@@ -52,7 +78,7 @@ def test_vertex_within_horizon_gets_segment_index_and_local_tau():
     # vértice cai dentro do 2º segmento (entre a 1ª e a 2ª reunião)
     vertex_date = date(2026, 4, 1)
     curve = _curve([vertex_date] + MEETINGS)
-    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
 
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
     assert entry["segment_index"] == 2  # boundary_dates = [val, m0, m1, m2] -- m1 é o índice 2
@@ -63,7 +89,7 @@ def test_vertex_within_horizon_gets_segment_index_and_local_tau():
 def test_vertex_beyond_last_meeting_gets_tail_fields():
     vertex_date = date(2027, 1, 1)  # depois da última reunião (2026-06-01)
     curve = _curve([vertex_date] + MEETINGS)
-    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
 
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
     assert entry["segment_index"] is None
@@ -74,7 +100,7 @@ def test_vertex_beyond_last_meeting_gets_tail_fields():
 def test_vertex_market_zero_matches_curve_directly():
     vertex_date = MEETINGS[1]
     curve = _curve([vertex_date] + MEETINGS, rate=0.12)
-    skeleton = build_lab_skeleton(curve, MEETINGS, current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
     assert entry["market_zero_pct"] == pytest.approx(curve.zero_rate(vertex_date) * 100)
 

@@ -19,6 +19,20 @@ to what the market already prices -- "surprise" only makes sense measured
 against today's market, which is exactly what pairing this skeleton's
 market_forward_pct/market_zero_pct columns against the user's typed path
 gives for free, without needing a second "shock" concept in the browser.
+
+IMPORTANT (Ricardo, 29/07/2026 -- bug real, achado por print de tela): a
+tabela inicial (heatmap/cards) e a tabela de cenários interativos "não
+batiam", porque cada uma calculava o bps precificado por reunião do seu
+próprio jeito -- os cards leem de priced_bc_<país>_<data>.csv, que dependendo
+do país é produzido por um caminho totalmente diferente do curve.forward_rate
+puro (curva suavizada por NSS, leitura direta de FRA, ou split 65/35 entre
+reuniões de um mesmo segmento de pilar -- ver central_banks/stripper.py,
+curves/fra_direct.py). Recalcular aqui via curve.forward_rate ignorava tudo
+isso e usava a curva EXATA (não suavizada) por cima, produzindo um número
+diferente (às vezes MUITO diferente -- ruído de interpolação entre pilares
+esparsos). Por isso market_forward_pct/market_change_bps agora vêm como
+parâmetro (direto do mesmo CSV que os cards leem), nunca recomputados aqui --
+garante que as duas tabelas sempre saem exatamente da mesma base.
 """
 from __future__ import annotations
 
@@ -27,28 +41,36 @@ from datetime import date
 from emrates.curves.base import DiscountCurve
 
 
-def build_lab_skeleton(curve: DiscountCurve, meetings: list[date], current_policy_rate: float) -> dict:
-    meetings = sorted(meetings)
-    if not meetings:
+def build_lab_skeleton(curve: DiscountCurve, meeting_reports: list[dict], current_policy_rate: float) -> dict:
+    """meeting_reports: uma linha por reunião, na MESMA fonte usada pelos
+    cards/heatmap (priced_bc_<país>_<data>.csv) -- cada dict precisa ter
+    "meeting_date" (date), "implied_change_bps" e "cumulative_change_from_spot_bps"
+    (mesmos nomes de coluna do CSV). Não é recalculado a partir da curva aqui
+    de propósito -- ver o docstring do módulo."""
+    meeting_reports = sorted(meeting_reports, key=lambda m: m["meeting_date"])
+    if not meeting_reports:
         raise ValueError("build_lab_skeleton precisa de pelo menos 1 reunião")
+    meetings = [m["meeting_date"] for m in meeting_reports]
     boundary_dates = [curve.valuation_date] + meetings
 
     meeting_skeleton = []
-    prev_market_pct = current_policy_rate * 100
     for i in range(1, len(boundary_dates)):
-        market_forward_pct = curve.forward_rate(boundary_dates[i - 1], boundary_dates[i]) * 100
+        r = meeting_reports[i - 1]
         meeting_skeleton.append(
             {
                 "date": boundary_dates[i].isoformat(),
                 "tau": curve.tau(boundary_dates[i - 1], boundary_dates[i]),
-                "market_forward_pct": market_forward_pct,
+                # current_policy_rate + cumulative_change_from_spot_bps/100 é
+                # a MESMA conta que a coluna "Acumulado" dos cards (bps ->
+                # pontos percentuais) -- garante que os dois lugares mostrem
+                # exatamente o mesmo número.
+                "market_forward_pct": current_policy_rate * 100 + r["cumulative_change_from_spot_bps"] / 100,
                 # O que o mercado já precifica NAQUELA reunião (não acumulado) --
                 # mostrado ao lado do input pra comparar direto com o cenário
                 # discreto que o usuário vai digitar (Ricardo, 29/07/2026).
-                "market_change_bps": (market_forward_pct - prev_market_pct) * 100,
+                "market_change_bps": r["implied_change_bps"],
             }
         )
-        prev_market_pct = market_forward_pct
 
     last_boundary = boundary_dates[-1]
     vertex_skeleton = []

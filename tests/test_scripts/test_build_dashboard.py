@@ -50,6 +50,27 @@ def _save_fixture_curve(processed_dir: Path) -> None:
     )
 
 
+def _save_fixture_report(processed_dir: Path, implied_change_bps: list[float] | None = None) -> None:
+    """priced_bc_brazil_<data>.csv -- a MESMA fonte que build_country_data
+    (cards/heatmap) e build_lab_section_data (aba de cenários) devem ler,
+    pra nunca divergir entre si (ver docstring de lab_data.py)."""
+    implied_change_bps = implied_change_bps or [-17.0, -12.0, 0.0, 5.0, 8.0]
+    cumulative, running = [], 0.0
+    for v in implied_change_bps:
+        running += v
+        cumulative.append(running)
+    df = pd.DataFrame(
+        {
+            "meeting_date": MEETINGS,
+            "level_before_bps": [0.0] * len(MEETINGS),
+            "level_after_bps": [0.0] * len(MEETINGS),
+            "implied_change_bps": implied_change_bps,
+            "cumulative_change_from_spot_bps": cumulative,
+        }
+    )
+    df.to_csv(processed_dir / f"priced_bc_brazil_{VALUATION_DATE}.csv", index=False)
+
+
 def test_lab_section_data_includes_market_change_bps_per_meeting(tmp_path):
     """build_lab_section_data must pass through lab_data.py's market_change_bps
     field per meeting -- the dashboard's "Mkt Δbps" column reads it directly
@@ -59,6 +80,7 @@ def test_lab_section_data_includes_market_change_bps_per_meeting(tmp_path):
     processed_dir.mkdir()
     _write_workbook(tmp_path / "Input_BCs.xlsx")
     _save_fixture_curve(processed_dir)
+    _save_fixture_report(processed_dir)
     settings = _settings(tmp_path)
 
     data = build_dashboard.build_lab_section_data(settings, processed_dir, "brazil", "Brasil")
@@ -66,6 +88,32 @@ def test_lab_section_data_includes_market_change_bps_per_meeting(tmp_path):
     assert data is not None
     meetings = data["skeleton"]["meetings"]
     assert meetings and all("market_change_bps" in m for m in meetings)
+
+
+def test_lab_meetings_match_cards_exactly_same_source_data(tmp_path):
+    """Regression: Ricardo (29/07/2026, print de tela) achou a tabela inicial
+    (cards) e a tabela de cenários interativos mostrando bps/taxa DIFERENTES
+    pra mesma reunião do mesmo país -- cada uma calculava por conta própria
+    (cards liam o priced_bc CSV, cenários recomputavam via curve.forward_rate
+    direto na curva não suavizada). As duas têm que sair exatamente da mesma
+    base agora -- ver docstring de lab_data.py."""
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+    _write_workbook(tmp_path / "Input_BCs.xlsx")
+    _save_fixture_curve(processed_dir)
+    _save_fixture_report(processed_dir)
+    settings = _settings(tmp_path)
+
+    card_data = build_dashboard.build_country_data(processed_dir, "brazil")
+    lab_data = build_dashboard.build_lab_section_data(settings, processed_dir, "brazil", "Brasil")
+
+    assert card_data is not None and lab_data is not None
+    lab_meetings = {m["date"]: m for m in lab_data["skeleton"]["meetings"]}
+    assert len(card_data["rows"]) == len(lab_meetings)
+    for row in card_data["rows"]:
+        lab_m = lab_meetings[row["meeting_date"].isoformat()]
+        assert lab_m["market_change_bps"] == pytest.approx(row["implied_change_bps"])
+        assert lab_m["market_forward_pct"] == pytest.approx(row["rate_pct"])
 
 
 def test_render_lab_section_has_n_scenario_columns_and_no_meeting_results_table(tmp_path):
@@ -77,6 +125,7 @@ def test_render_lab_section_has_n_scenario_columns_and_no_meeting_results_table(
     processed_dir.mkdir()
     _write_workbook(tmp_path / "Input_BCs.xlsx")
     _save_fixture_curve(processed_dir)
+    _save_fixture_report(processed_dir)
     settings = _settings(tmp_path)
 
     data = build_dashboard.build_lab_section_data(settings, processed_dir, "brazil", "Brasil")
@@ -86,3 +135,18 @@ def test_render_lab_section_has_n_scenario_columns_and_no_meeting_results_table(
     assert html.count('class="lab-bps-input"') == build_dashboard.LAB_N_SCENARIOS * len(data["skeleton"]["meetings"])
     assert "lab-meeting-tbody" not in html
     assert "lab-vertex-thead-brazil" in html
+
+
+def test_render_country_card_shows_rate_next_to_meeting_date(tmp_path):
+    """Ricardo (29/07/2026): quer a taxa da reunião ao lado da data, na
+    tabela de cada país, e a data numa linha só (sem quebrar)."""
+    processed_dir = tmp_path / "processed"
+    processed_dir.mkdir()
+    _save_fixture_curve(processed_dir)
+    _save_fixture_report(processed_dir)
+
+    card_data = build_dashboard.build_country_data(processed_dir, "brazil")
+    html = build_dashboard.render_country_card(card_data)
+
+    assert '<th class="num">Taxa</th>' in html
+    assert build_dashboard.fmt_pct(card_data["rows"][0]["rate_pct"]) in html

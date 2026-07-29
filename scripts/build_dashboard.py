@@ -21,7 +21,6 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from emrates.central_banks.meeting_dates import upcoming_meetings
 from emrates.data.calendars import CalendarSet
 from emrates.data.curve_store import load_curve
 from emrates.data.excel_loader import InputsBCsLoader
@@ -86,6 +85,7 @@ def build_country_data(processed_dir: Path, country: str) -> dict | None:
     one_day_map = cumulative_lookup(one_day_path)
     five_day_map = cumulative_lookup(five_day_path)
 
+    policy_rate = load_policy_rate(processed_dir, country, latest_date)
     rows = []
     for _, r in latest_df.iterrows():
         meeting_date = r["meeting_date"].date()
@@ -93,6 +93,11 @@ def build_country_data(processed_dir: Path, country: str) -> dict | None:
         rows.append(
             {
                 "meeting_date": meeting_date,
+                # current_policy_rate + cumulative_change_from_spot_bps -- a
+                # MESMA conta que a aba de cenários interativos usa pro
+                # "Mercado hoje" (ver emrates/scenarios/lab_data.py), pra
+                # nunca mostrar dois números diferentes pra mesma reunião.
+                "rate_pct": (policy_rate * 100 + cumulative / 100) if policy_rate is not None else None,
                 "implied_change_bps": r["implied_change_bps"],
                 "cumulative_bps": cumulative,
                 "delta_1d": (cumulative - one_day_map[meeting_date]) if meeting_date in one_day_map else None,
@@ -104,7 +109,7 @@ def build_country_data(processed_dir: Path, country: str) -> dict | None:
         "country": country,
         "label": COUNTRY_LABELS[country],
         "as_of": latest_date,
-        "policy_rate": load_policy_rate(processed_dir, country, latest_date),
+        "policy_rate": policy_rate,
         "rows": rows,
         "has_1d": one_day_path is not None,
         "has_5d": five_day_path is not None,
@@ -117,6 +122,12 @@ def fmt_bps(v) -> str:
     return f"{v:+.0f}"
 
 
+def fmt_pct(v) -> str:
+    if v is None or v != v:
+        return "—"
+    return f"{v:.3f}%"
+
+
 def render_country_card(c: dict) -> str:
     policy_txt = f'{c["policy_rate"] * 100:.3f}%' if c["policy_rate"] is not None else "—"
     rows_html = []
@@ -125,6 +136,7 @@ def render_country_card(c: dict) -> str:
             f"""
             <tr>
               <td class="ink-secondary">{row['meeting_date']}</td>
+              <td class="num">{fmt_pct(row['rate_pct'])}</td>
               <td class="num">{fmt_bps(row['implied_change_bps'])}</td>
               <td class="num">{fmt_bps(row['cumulative_bps'])}</td>
               <td class="num {'ink-muted' if row['delta_1d'] is None else ''}">{fmt_bps(row['delta_1d'])}</td>
@@ -137,15 +149,17 @@ def render_country_card(c: dict) -> str:
         <h3>{c['label']}</h3>
         <span class="policy-rate">taxa atual: <strong>{policy_txt}</strong></span>
       </header>
-      <table class="country-table">
-        <thead>
-          <tr>
-            <th>Reunião</th><th class="num">Δ bps</th><th class="num">Acumulado</th>
-            <th class="num">Δ 1d</th><th class="num">Δ 5d</th>
-          </tr>
-        </thead>
-        <tbody>{"".join(rows_html)}</tbody>
-      </table>
+      <div class="card-table-scroll">
+        <table class="country-table">
+          <thead>
+            <tr>
+              <th>Reunião</th><th class="num">Taxa</th><th class="num">Δ bps</th><th class="num">Acumulado</th>
+              <th class="num">Δ 1d</th><th class="num">Δ 5d</th>
+            </tr>
+          </thead>
+          <tbody>{"".join(rows_html)}</tbody>
+        </table>
+      </div>
     </section>"""
 
 
@@ -154,12 +168,14 @@ def _latest_curve_path(processed_dir: Path, country: str) -> Path | None:
     return candidates[-1] if candidates else None
 
 
-def _load_input_sources(settings: dict):
-    """Loads Input_BCs.xlsx (meeting dates + holiday calendars) once, shared
-    across every country's interactive scenario lab. Returns
-    (meetings_by_country, calendars), or None if the file isn't available
-    here — the lab section is skipped in that case, base dashboard still
-    renders."""
+def _load_calendars(settings: dict) -> CalendarSet | None:
+    """Loads just the holiday calendars from Input_BCs.xlsx, needed for
+    calendar-aware day-count (BUS/252) inside the interactive scenario lab's
+    curve.tau() calls. Meeting dates themselves are NOT read from here
+    anymore — the lab reads them straight off the same priced_bc CSV the
+    cards/heatmap use, so the two can never disagree on what's priced (see
+    build_lab_section_data). Returns None if the file isn't available here —
+    the lab section is skipped in that case, base dashboard still renders."""
     column_map = {
         "dates": settings["dates_columns"],
         "dates_sheet": settings["sheets"]["dates_sheet"],
@@ -170,11 +186,9 @@ def _load_input_sources(settings: dict):
     }
     try:
         loader = InputsBCsLoader(settings["paths"]["inputs_bcs"], column_map)
-        meetings_by_country = loader.load_meeting_dates()
-        calendars = CalendarSet.from_holiday_frame(loader.load_holidays())
+        return CalendarSet.from_holiday_frame(loader.load_holidays())
     except FileNotFoundError:
         return None
-    return meetings_by_country, calendars
 
 
 def _json_for_script(data) -> str:
@@ -194,24 +208,46 @@ def build_lab_section_data(settings: dict, processed_dir: Path, country: str, co
     ao mercado -- Ricardo, 29/07/2026: 'a surpresa só faz sentido assim')
     e o navegador recalcula o impacto na hora, sem depender de Python
     rodando de novo. Ver emrates/scenarios/lab_data.py pro que exatamente
-    é pré-computado aqui vs. o que fica por conta do JS."""
+    é pré-computado aqui vs. o que fica por conta do JS.
+
+    As reuniões e o bps precificado em cada uma vêm do MESMO
+    priced_bc_<país>_<data>.csv que os cards/heatmap leem (find_snapshots),
+    não recalculado via curve.forward_rate -- Ricardo (29/07/2026, print de
+    tela) pegou as duas tabelas mostrando números diferentes pro mesmo país/
+    reunião, porque cada uma tinha sua própria conta. Ver lab_data.py."""
     curve_path = _latest_curve_path(processed_dir, country)
     if curve_path is None:
         return None
 
-    sources = _load_input_sources(settings)
-    if sources is None:
+    snapshots = find_snapshots(processed_dir, country)
+    if not snapshots:
         return None
-    meetings_by_country, calendars = sources
+    latest_report_date = max(snapshots)
+    report_df = pd.read_csv(snapshots[latest_report_date], parse_dates=["meeting_date"])
+    if report_df.empty:
+        return None
+
+    calendars = _load_calendars(settings)
+    if calendars is None:
+        return None
 
     curve = load_curve(curve_path, calendars.get(country))
-    horizon = settings["reporting"]["meetings_horizon"]
-    meetings = upcoming_meetings(meetings_by_country.get(country, []), curve.valuation_date, horizon)
-    if not meetings:
+    if curve.valuation_date != latest_report_date:
+        # Curva e relatório de dias diferentes -- não dá pra garantir que
+        # os vértices (da curva) e as reuniões (do relatório) sejam
+        # consistentes entre si, então pula em vez de arriscar misturar.
         return None
 
     current_policy_rate = load_policy_rate(processed_dir, country, curve.valuation_date) or 0.0
-    skeleton = build_lab_skeleton(curve, meetings, current_policy_rate)
+    meeting_reports = [
+        {
+            "meeting_date": r["meeting_date"].date(),
+            "implied_change_bps": r["implied_change_bps"],
+            "cumulative_change_from_spot_bps": r["cumulative_change_from_spot_bps"],
+        }
+        for _, r in report_df.iterrows()
+    ]
+    skeleton = build_lab_skeleton(curve, meeting_reports, current_policy_rate)
 
     return {"country": country, "label": country_label, "skeleton": skeleton}
 
@@ -567,16 +603,18 @@ def main() -> None:
   /* Fixed 4 columns (not auto-fill) so layout order is predictable: row 1 is
      LatAm, row 2 is CEMEA, and south_africa (last in COUNTRIES) lands in
      colombia's column, directly below it. */
-  .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; max-width: 900px; }}
+  .grid {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; max-width: 1100px; }}
   @media (max-width: 1100px) {{ .grid {{ grid-template-columns: repeat(2, 1fr); }} }}
   @media (max-width: 560px) {{ .grid {{ grid-template-columns: 1fr; }} }}
   .card {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }}
   .card-header {{ display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }}
   .policy-rate {{ font-size: 12px; color: var(--ink-secondary); }}
+  .card-table-scroll {{ overflow-x: auto; }}
   table.country-table {{ width: 100%; border-collapse: collapse; font-size: 12.5px; }}
   table.country-table th {{ text-align: left; color: var(--ink-muted); font-weight: 500; font-size: 11px;
-    padding: 4px 6px; border-bottom: 1px solid var(--gridline); }}
-  table.country-table td {{ padding: 6px; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums; }}
+    padding: 4px 6px; border-bottom: 1px solid var(--gridline); white-space: nowrap; }}
+  table.country-table td {{ padding: 6px; border-bottom: 1px solid var(--gridline); font-variant-numeric: tabular-nums;
+    white-space: nowrap; }}
   .num {{ text-align: right; }}
   .scenario-note {{ font-size: 12px; color: var(--ink-muted); margin: 0 0 16px; }}
   .panel {{ background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
