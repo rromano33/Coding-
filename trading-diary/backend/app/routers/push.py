@@ -1,0 +1,60 @@
+from fastapi import APIRouter, Depends, HTTPException, status as http_status
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user
+from app.config import settings
+from app.database import get_db
+from app.models import PushSubscription, User
+from app.push_service import send_push
+from app.schemas import PushSubscriptionCreate, PushSubscriptionRemove, VapidPublicKey
+
+router = APIRouter(prefix="/push", tags=["push"])
+
+
+@router.get("/public-key", response_model=VapidPublicKey)
+def public_key():
+    if not settings.vapid_public_key:
+        raise HTTPException(
+            http_status.HTTP_503_SERVICE_UNAVAILABLE, "VAPID_PUBLIC_KEY não configurada no backend"
+        )
+    return VapidPublicKey(public_key=settings.vapid_public_key)
+
+
+@router.post("/subscribe", status_code=http_status.HTTP_204_NO_CONTENT)
+def subscribe(
+    payload: PushSubscriptionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    existing = db.query(PushSubscription).filter(PushSubscription.endpoint == payload.endpoint).first()
+    if existing:
+        existing.user_id = current_user.id
+        existing.p256dh = payload.keys.p256dh
+        existing.auth = payload.keys.auth
+    else:
+        db.add(
+            PushSubscription(
+                user_id=current_user.id,
+                endpoint=payload.endpoint,
+                p256dh=payload.keys.p256dh,
+                auth=payload.keys.auth,
+            )
+        )
+    db.commit()
+
+
+@router.post("/unsubscribe", status_code=http_status.HTTP_204_NO_CONTENT)
+def unsubscribe(
+    payload: PushSubscriptionRemove, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)
+):
+    db.query(PushSubscription).filter(
+        PushSubscription.endpoint == payload.endpoint, PushSubscription.user_id == current_user.id
+    ).delete()
+    db.commit()
+
+
+@router.post("/test", status_code=http_status.HTTP_204_NO_CONTENT)
+def test(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    subscriptions = db.query(PushSubscription).filter(PushSubscription.user_id == current_user.id).all()
+    if not subscriptions:
+        raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Nenhuma subscription de push cadastrada para este usuário")
+    for subscription in subscriptions:
+        send_push(db, subscription, "Teste", "Notificação de teste do diário de trades.")

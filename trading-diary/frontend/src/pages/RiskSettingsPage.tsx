@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { riskSettingsApi } from "../api/endpoints";
+import { pushApi, riskSettingsApi } from "../api/endpoints";
+import {
+  disablePushNotifications,
+  enablePushNotifications,
+  getPushSubscriptionStatus,
+  isPushSupported,
+} from "../push";
 import type {
   ConvictionTierInput,
   DrawdownPhaseInput,
@@ -38,6 +44,46 @@ export default function RiskSettingsPage() {
   const [layers, setLayers] = useState<StopLayerInput[]>([]);
   const [phases, setPhases] = useState<DrawdownPhaseInput[]>([]);
   const [postures, setPostures] = useState<SeasonalPostureInput[]>([]);
+
+  const [pushEnabled, setPushEnabled] = useState(false);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPushSupported()) return;
+    getPushSubscriptionStatus().then((sub) => setPushEnabled(!!sub));
+  }, []);
+
+  async function handleTogglePush() {
+    setPushBusy(true);
+    setPushMessage(null);
+    try {
+      if (pushEnabled) {
+        await disablePushNotifications();
+        setPushEnabled(false);
+      } else {
+        await enablePushNotifications();
+        setPushEnabled(true);
+      }
+    } catch (err) {
+      setPushMessage(err instanceof Error ? err.message : "Erro ao configurar notificações");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function handleTestPush() {
+    setPushBusy(true);
+    setPushMessage(null);
+    try {
+      await pushApi.test();
+      setPushMessage("Notificação de teste enviada.");
+    } catch (err) {
+      setPushMessage(err instanceof Error ? err.message : "Erro ao enviar teste");
+    } finally {
+      setPushBusy(false);
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -99,6 +145,34 @@ export default function RiskSettingsPage() {
           Ver status
         </button>
       </div>
+
+      <Section title="Notificações">
+        {!isPushSupported() ? (
+          <p className="text-sm text-slate-500">
+            Este navegador não suporta notificações push (no iPhone, precisa instalar o app na tela inicial primeiro).
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <button
+              onClick={handleTogglePush}
+              disabled={pushBusy}
+              className="w-full bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-sm font-medium py-2.5 rounded-lg"
+            >
+              {pushEnabled ? "Desativar notificações" : "Ativar notificações"}
+            </button>
+            {pushEnabled && (
+              <button
+                onClick={handleTestPush}
+                disabled={pushBusy}
+                className="w-full text-xs text-green-400 disabled:opacity-50"
+              >
+                Enviar notificação de teste
+              </button>
+            )}
+            {pushMessage && <p className="text-xs text-slate-400">{pushMessage}</p>}
+          </div>
+        )}
+      </Section>
 
       <Section title="1. Capital e orçamento de risco anual">
         <Field label="Capital alocado (R$)">

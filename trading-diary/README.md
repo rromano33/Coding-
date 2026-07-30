@@ -79,6 +79,54 @@ sua máquina e acessar pelo IP dela na mesma rede Wi-Fi do celular
   (badge amarelo) ou já cruzou (badge vermelho + alerta "stop" na aba
   Risco, com link direto pro trade).
 
+## Notificações push
+
+O app manda push notifications (stop atingido, alertas de risco, ou um
+lembrete diário se não tiver nada crítico) — um job roda 1x/dia (9h) no
+próprio backend.
+
+Setup:
+
+1. Gerar as chaves VAPID (só uma vez, não versionar):
+   ```bash
+   cd trading-diary/backend
+   .venv/bin/python scripts/generate_vapid_keys.py
+   ```
+2. Colar a saída em `backend/.env` (`VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`) e
+   definir `VAPID_CLAIM_EMAIL` com um e-mail de contato (veja `.env.example`).
+
+### Testar push de verdade no iPhone
+
+Safari só entrega push pro app **instalado na tela de início** (não pra aba
+normal do navegador) e exige HTTPS — `localhost` não serve. Pra testar sem
+fazer deploy, expor os dois serviços via túnel do Cloudflare
+([cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)):
+
+```bash
+# 1. backend rodando normalmente
+cd trading-diary/backend
+.venv/bin/uvicorn app.main:app --port 8000
+
+# 2. túnel do backend (anota a URL https gerada)
+cloudflared tunnel --url http://localhost:8000
+
+# 3. aponta o frontend pro backend do túnel e builda
+#    (VITE_API_URL é embutido no build, não é runtime — precisa rebuildar
+#    se a URL do túnel mudar)
+cd trading-diary/frontend
+echo "VITE_API_URL=https://<url-do-tunel-do-backend>" > .env
+npm run build
+npm run preview -- --host
+
+# 4. túnel do frontend buildado
+cloudflared tunnel --url http://localhost:4173
+```
+
+No iPhone: abra a URL https do túnel do frontend no Safari → ícone de
+compartilhar → "Adicionar à Tela de Início" → abra pelo ícone instalado
+(não pela aba do Safari) → Risco → ⚙ Opções → "Ativar notificações" →
+aceite a permissão → "Enviar notificação de teste".
+
 ## Próximos passos possíveis
 
 - Deploy do backend (Render/Fly/Railway) + Postgres gerenciado no lugar do

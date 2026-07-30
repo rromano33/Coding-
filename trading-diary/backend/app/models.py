@@ -29,6 +29,7 @@ class User(Base):
     stop_layers: Mapped[list["StopLayer"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     drawdown_phases: Mapped[list["DrawdownPhase"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     seasonal_postures: Mapped[list["SeasonalPosture"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Trade(Base):
@@ -220,3 +221,18 @@ class SeasonalPosture(Base):
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 
     user: Mapped["User"] = relationship(back_populates="seasonal_postures")
+
+
+class PushSubscription(Base):
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    endpoint: Mapped[str] = mapped_column(String(512), unique=True)
+    p256dh: Mapped[str] = mapped_column(String(255))
+    auth: Mapped[str] = mapped_column(String(255))
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="push_subscriptions")

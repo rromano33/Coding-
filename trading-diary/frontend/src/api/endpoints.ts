@@ -91,3 +91,10 @@ export const riskSettingsApi = {
 export const riskApi = {
   status: () => api.get<RiskStatus>("/risk/status"),
 };
+
+export const pushApi = {
+  publicKey: () => api.get<{ public_key: string }>("/push/public-key"),
+  subscribe: (subscription: PushSubscriptionJSON) => api.post<void>("/push/subscribe", subscription),
+  unsubscribe: (endpoint: string) => api.post<void>("/push/unsubscribe", { endpoint }),
+  test: () => api.post<void>("/push/test", {}),
+};

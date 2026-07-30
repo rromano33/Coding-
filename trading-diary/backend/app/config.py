@@ -13,6 +13,10 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     cors_origins: list[str] = ["*"]
 
+    vapid_public_key: str = os.environ.get("VAPID_PUBLIC_KEY", "")
+    vapid_private_key: str = os.environ.get("VAPID_PRIVATE_KEY", "")
+    vapid_claim_email: str = os.environ.get("VAPID_CLAIM_EMAIL", "ricardo.fipe@gmail.com")
+
     class Config:
         env_file = ".env"
 

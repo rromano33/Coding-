@@ -106,6 +106,39 @@ trading-diary/
   por distância ao stop (`risco_maximo / |entry - stop|`) e por
   volatilidade do ativo (`risco_maximo / (entry_price × vol_diaria_pct)`,
   assumindo 1× vol diária como referência de risco).
+- **Push notifications (web push)**:
+  - `PushSubscription` (modelo novo): `endpoint`/`p256dh`/`auth` por usuário,
+    N por usuário (um por dispositivo/navegador instalado).
+  - `app/push_service.py`: `send_push` (pywebpush + VAPID, remove a
+    subscription do banco se o endpoint responder 404/410) e
+    `send_daily_reminder` (varre usuários com subscription ativa, calcula
+    `risk/status` de cada um e manda push — prioriza stop > alerta > lembrete
+    genérico de trades abertos).
+  - `app/routers/push.py`: `GET /push/public-key`, `POST /push/subscribe`,
+    `POST /push/unsubscribe`, `POST /push/test`.
+  - Job diário agendado via APScheduler (`BackgroundScheduler`, cron
+    9h todo dia) registrado no `lifespan` do `main.py` — roda em thread própria
+    dentro do próprio processo do backend (não é um worker separado).
+  - Chaves VAPID em `.env` (`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
+    `VAPID_CLAIM_EMAIL`), geradas com
+    `backend/scripts/generate_vapid_keys.py`. **Nunca commitar as chaves
+    reais** — só `.env.example` vazio vai pro repo.
+  - Frontend: `vite-plugin-pwa` trocado de `generateSW` pra
+    `strategies: "injectManifest"` (precisava de um service worker
+    customizado pra lidar com os eventos `push`/`notificationclick`).
+    `src/sw.ts` faz precache via `workbox-precaching` e mostra a notificação
+    com o payload JSON mandado pelo backend (`title`/`body`/`url`).
+    `src/sw.ts` é **excluído do `tsc -b`** (ver `tsconfig.json`) porque usa
+    globais de `webworker`, incompatíveis com o `lib: DOM` do resto do app;
+    o `vite build` bundla e type-checa o service worker separadamente.
+  - `src/push.ts`: helpers `enablePushNotifications`/
+    `disablePushNotifications`/`getPushSubscriptionStatus`. UI em
+    `RiskSettingsPage` (seção "Notificações": ativar/desativar + botão de
+    teste).
+  - No iPhone (Safari), push só funciona com o site **instalado na tela
+    inicial** (PWA standalone) — Safari não dá push pra aba de navegador
+    comum. Testar isso é passo manual do usuário, não dá pra validar numa
+    sessão remota.
 
 ## Decisões deliberadas — não reabrir sem motivo novo
 

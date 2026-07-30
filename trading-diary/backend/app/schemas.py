@@ -314,3 +314,23 @@ class RiskStatus(BaseModel):
     concentracao_classe: list[ConcentrationItem]
 
     alerts: list[RiskAlert]
+
+
+# ---- Push notifications ----
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscriptionCreate(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys
+
+
+class PushSubscriptionRemove(BaseModel):
+    endpoint: str
+
+
+class VapidPublicKey(BaseModel):
+    public_key: str
