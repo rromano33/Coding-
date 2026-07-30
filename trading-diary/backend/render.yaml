@@ -1,0 +1,27 @@
+# Blueprint opcional do Render. Monorepo (este repo tem outros projetos na
+# raiz), então o auto-detect de Blueprint pode não pegar este arquivo sem
+# apontar explicitamente pra ele na hora de criar o Blueprint — nesse caso,
+# use a configuração manual descrita no README.md (seção "Deploy 24/7").
+services:
+  - type: web
+    name: trading-diary-backend
+    runtime: docker
+    dockerfilePath: ./trading-diary/backend/Dockerfile
+    dockerContext: ./trading-diary/backend
+    plan: starter
+    healthCheckPath: /health
+    disk:
+      name: trading-diary-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_CLAIM_EMAIL
+        sync: false
+      - key: CORS_ORIGINS
+        value: '["https://SEU-APP.vercel.app"]'

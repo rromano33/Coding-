@@ -127,11 +127,68 @@ compartilhar → "Adicionar à Tela de Início" → abra pelo ícone instalado
 (não pela aba do Safari) → Risco → ⚙ Opções → "Ativar notificações" →
 aceite a permissão → "Enviar notificação de teste".
 
+## Deploy 24/7
+
+Backend no Render (Docker + disco persistente, sem precisar trocar de
+SQLite) e frontend no Vercel. Estimativa de custo: Render "Starter"
+(instância que não hiberna e suporta disco) fica em torno de US$7/mês;
+Vercel no plano Hobby é gratuito pra esse tamanho de app.
+
+### 1. Backend → Render
+
+1. [render.com](https://render.com) → **New** → **Web Service** → conecte o
+   repo `rromano33/coding-`.
+2. **Root Directory**: `trading-diary/backend`.
+3. **Runtime**: Docker (Dockerfile Path: `Dockerfile`, já que o root
+   directory acima já aponta pra pasta certa).
+4. **Plan**: Starter (o free tier hiberna e não tem disco persistente —
+   não serve pra manter o SQLite entre reinícios).
+5. Aba **Disks** → adicionar disco: mount path `/app/data`, 1 GB (o
+   `DATABASE_URL` padrão do app já aponta pra esse caminho, não precisa
+   sobrescrever).
+6. Aba **Environment** → adicionar:
+   - `SECRET_KEY`: qualquer string aleatória longa.
+   - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_CLAIM_EMAIL`: as
+     mesmas chaves geradas pra push (veja seção acima) — **não** as chaves
+     de teste deste repo, gere um par novo pra produção.
+   - `CORS_ORIGINS`: por ora deixe `["*"]`; depois do passo 2 (Vercel),
+     volte aqui e troque pelo domínio real, ex.
+     `["https://seu-app.vercel.app"]`.
+7. **Health Check Path**: `/health`.
+8. Deploy. Anota a URL gerada (`https://trading-diary-backend-xxxx.onrender.com`).
+
+Há um `render.yaml` em `trading-diary/backend/` com essa configuração como
+Blueprint — pode tentar usá-lo direto (**New** → **Blueprint**, apontando
+pro arquivo), mas como o repo tem outros projetos na raiz o auto-detect do
+Render pode não achá-lo; se não achar, siga os passos manuais acima.
+
+### 2. Frontend → Vercel
+
+1. [vercel.com](https://vercel.com) → **New Project** → importe o mesmo
+   repo `rromano33/coding-`.
+2. **Root Directory**: `trading-diary/frontend` (framework Vite é
+   auto-detectado).
+3. **Environment Variables** → `VITE_API_URL` = a URL do Render do passo 1
+   (ex. `https://trading-diary-backend-xxxx.onrender.com`). É embutida no
+   build, então qualquer mudança nessa variável exige um redeploy.
+4. Deploy. Anota a URL gerada (`https://seu-app.vercel.app`).
+5. Volte no Render e atualize `CORS_ORIGINS` com essa URL, redeploy o
+   backend.
+
+O `vercel.json` já incluído faz o rewrite de todas as rotas pra
+`index.html` (necessário porque o app usa `react-router-dom` com histórico
+de navegador — sem isso, atualizar a página numa rota tipo `/trades/5` dá
+404).
+
+### 3. Testar
+
+Abra a URL do Vercel no celular, crie a conta (ou reaproveite se migrou
+dados manualmente — **este deploy começa com banco vazio**, os trades
+salvos localmente não são migrados automaticamente), adicione à tela de
+início e ative as notificações em Opções.
+
 ## Próximos passos possíveis
 
-- Deploy do backend (Render/Fly/Railway) + Postgres gerenciado no lugar do
-  SQLite, se quiser sincronizar entre vários dispositivos de forma mais
-  robusta.
 - Anexar prints/screenshots do gráfico a cada trade.
 - Editar trade fechado ainda parcialmente (hoje dá pra editar tudo via
   `PUT /trades/{id}`, mas a UI de edição é a mesma tela de criação —

@@ -170,6 +170,17 @@ trading-diary/
   antes de expor o backend publicamente.
 - **SQLite, não Postgres** — suficiente pro volume de dados de uma pessoa;
   trocar é só mudar `DATABASE_URL` (já abstraído em `config.py`).
+- **Deploy: Render (Docker + disco persistente) em vez de migrar pra
+  Postgres.** Decisão deliberada pra manter o SQLite (ver ponto acima) —
+  monta um disco em `/app/data` (mesmo caminho que `config.py` já usa por
+  default) no plano Starter do Render, que não hiberna e mantém o disco
+  entre deploys/restarts. Testado localmente (fora do Render) apontando
+  `DATABASE_URL` pra um caminho fixo, matando e subindo o processo de novo:
+  dado sobrevive. Frontend no Vercel (`vercel.json` com rewrite de SPA,
+  necessário por causa do `BrowserRouter`). Ver README.md → "Deploy 24/7"
+  pro passo a passo completo (inclui os campos exatos do dashboard do
+  Render/Vercel). `CORS_ORIGINS` no Render precisa ser atualizado pro
+  domínio real do Vercel depois do primeiro deploy do frontend.
 
 ## Como rodar
 
@@ -197,9 +208,8 @@ não-relacionado, `emrates`, na raiz — não mexer nele por engano).
 
 ## Ideias de próximos passos (não compromissos, só notas)
 
-- Deploy (Render/Fly + Vercel/Netlify) pra acesso via URL pública, se
-  quiser usar sem depender do computador ligado.
-- Alembic, se o schema for mudar de novo com dados reais já no banco.
+- Alembic, se o schema for mudar de novo com dados reais já no banco
+  (agora que tem deploy 24/7 com dados reais, vale mais a pena que antes).
 - Separar "tese" de `strategy` se a sobreposição atrapalhar na prática.
 - Anexar screenshots de gráfico a um trade.
 - Fluxo de "fechar trade" separado do formulário de edição genérico.
