@@ -114,6 +114,23 @@ def test_vertex_has_no_market_zero_pct_field():
     assert "market_zero_pct" not in entry
 
 
+def test_vertices_beyond_two_years_are_excluded():
+    """Ricardo (30/07/2026): a coluna 'Mercado' de vértices além da última
+    reunião modelada é um híbrido (nível do relatório + formato da curva
+    real), e pro México especificamente diverge >50bps da curva real nos
+    vértices mais longos. Limitar a tabela de impacto a 2 anos à frente
+    reduz a divergência e evita o caso híbrido de cauda pra maioria dos
+    países."""
+    within_2y = date(2027, 6, 1)  # ~1.4 anos depois de 2026-01-05
+    beyond_2y = date(2029, 1, 1)  # ~3 anos depois
+    curve = _curve([within_2y, beyond_2y] + MEETINGS)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
+
+    maturities = {v["maturity"] for v in skeleton["vertices"]}
+    assert within_2y.isoformat() in maturities
+    assert beyond_2y.isoformat() not in maturities
+
+
 def test_raises_when_no_meetings_given():
     curve = _curve(MEETINGS)
     with pytest.raises(ValueError, match="pelo menos 1 reunião"):

@@ -305,7 +305,7 @@ def render_lab_section(lab_data_list: list[dict]) -> str:
         <button type="button" class="lab-reset-btn" data-country="{country}">Limpar</button>
       </div>
       <div class="lab-results" id="lab-results-{country}" hidden>
-        <h4>Impacto por vértice (contratos usados na curva)</h4>
+        <h4>Impacto por vértice (contratos usados na curva, até 2 anos à frente)</h4>
         <div class="panel"><table class="compare">
           <thead><tr id="lab-vertex-thead-{country}"></tr></thead>
           <tbody id="lab-vertex-tbody-{country}"></tbody>

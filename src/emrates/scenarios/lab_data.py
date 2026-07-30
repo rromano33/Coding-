@@ -48,15 +48,31 @@ navegador rodando o motor do cenário com o caminho de reuniões do mercado
 como input (ver LAB_SCRIPT/computeLab em build_dashboard.py) -- isso
 garante, por construção (mesma função determinística chamada duas vezes com
 o mesmo input), que cenário == mercado sempre dá impacto zero.
+
+IMPORTANT #3 (Ricardo, 30/07/2026): mesmo com o fix #2, o vértice "Mercado"
+ainda pode divergir bastante da curva REAL de posição -- porque, além da
+última reunião modelada, o cálculo é um híbrido (nível vindo do caminho de
+reuniões do relatório até ali, formato da curva daquele ponto em diante
+vindo da curva real -- ver o branch "else" abaixo). Pro México
+especificamente (curva do relatório = linear-rate, bem diferente do
+bootstrap de cupom da curva real -- ver curves/linear_rate.py), essa
+divergência passa de 50bps nos vértices mais longos. Ricardo pediu pra
+limitar a tabela de impacto a vencimentos de até 2 anos à frente -- isso
+tanto reduz a magnitude da divergência quanto elimina o caso híbrido de
+cauda quase por completo pra a maioria dos países (a última reunião
+modelada tende a cair dentro dessa janela).
 """
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from emrates.curves.base import DiscountCurve
 from emrates.data.ticker_parsing import brazil_di1_label
 
 _AVG_DAYS_PER_MONTH = 30.4368
+# Ricardo (30/07/2026): tabela de impacto por vértice limitada a 2 anos à
+# frente -- ver IMPORTANT #3 acima.
+MAX_VERTEX_HORIZON_DAYS = 365 * 2
 
 
 def _tenor_label(valuation_date: date, maturity: date) -> str:
@@ -117,8 +133,11 @@ def build_lab_skeleton(
         )
 
     last_boundary = boundary_dates[-1]
+    horizon_cutoff = curve.valuation_date + timedelta(days=MAX_VERTEX_HORIZON_DAYS)
     vertex_skeleton = []
     for maturity in curve.pillar_dates:
+        if maturity > horizon_cutoff:
+            continue
         entry = {
             "maturity": maturity.isoformat(),
             "label": _vertex_label(country, curve.valuation_date, maturity),
