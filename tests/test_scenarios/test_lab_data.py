@@ -97,12 +97,21 @@ def test_vertex_beyond_last_meeting_gets_tail_fields():
     assert entry["tail_base_forward_pct"] == pytest.approx(curve.forward_rate(MEETINGS[-1], vertex_date) * 100)
 
 
-def test_vertex_market_zero_matches_curve_directly():
+def test_vertex_has_no_market_zero_pct_field():
+    """Regression (Ricardo, 30/07/2026): o skeleton costumava expor um
+    market_zero_pct por vértice vindo de curve.zero_rate() -- a curva EXATA
+    usada pra precificar posições, que pode ser diferente da curva usada
+    pro caminho de reuniões (market_forward_pct/market_change_bps, vindo do
+    priced_bc report -- NSS/linear-rate/split/FRA-direto conforme o país).
+    Digitar exatamente o caminho do "Mkt Δbps" como cenário não dava
+    impacto zero por causa disso. O baseline de mercado agora é computado
+    no navegador com o próprio motor do cenário (ver LAB_SCRIPT), não
+    precisa (e não pode) vir pronto daqui -- ver docstring do módulo."""
     vertex_date = MEETINGS[1]
     curve = _curve([vertex_date] + MEETINGS, rate=0.12)
     skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
-    assert entry["market_zero_pct"] == pytest.approx(curve.zero_rate(vertex_date) * 100)
+    assert "market_zero_pct" not in entry
 
 
 def test_raises_when_no_meetings_given():

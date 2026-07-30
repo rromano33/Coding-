@@ -368,10 +368,15 @@ LAB_SCRIPT = """
     return '#' + [r, g, b].map(function(x) { return x.toString(16).padStart(2, '0'); }).join('');
   }
 
-  // Roda o mesmo cenário absoluto (bps por reunião) contra o skeleton e
-  // devolve só o impacto por vértice -- as reuniões já ficam visíveis na
-  // própria tabela de input (com o Mkt Δbps ao lado pra comparar), então o
-  // resultado do "Calcular" não repete isso (Ricardo, 29/07/2026).
+  // Roda um caminho absoluto (bps por reunião) contra o skeleton e devolve a
+  // taxa zero implícita em cada vértice -- pura função determinística, sem
+  // olhar pra nenhum "mercado" fixo. Usada tanto pro(s) cenário(s) do
+  // usuário quanto pro baseline de mercado (ver computeLab) -- é isso que
+  // garante, por construção, que digitar exatamente o caminho que o
+  // mercado precifica dá impacto zero em todo vértice (Ricardo, 30/07/2026:
+  // antes comparava contra curve.zero_rate() de uma curva DIFERENTE da que
+  // gerou o Mkt Δbps -- NSS/linear-rate/split/FRA-direto dependendo do
+  // país -- então nunca batia exatamente).
   function computeScenario(skeleton, bps) {
     var levels = [];
     var level = skeleton.current_policy_rate_pct;
@@ -398,9 +403,7 @@ LAB_SCRIPT = """
         var tailRatePct = v.tail_base_forward_pct + finalShiftPct;
         df = dfs[dfs.length - 1] * discountFactor(tailRatePct, v.tail_tau, skeleton.compounding);
       }
-      var zeroPct = zeroRatePct(df, v.tau_from_valuation, skeleton.compounding);
-      var deltaBps = (zeroPct - v.market_zero_pct) * 100;
-      return { maturity: v.maturity, market_pct: v.market_zero_pct, scenario_pct: zeroPct, delta_bps: deltaBps };
+      return { maturity: v.maturity, scenario_pct: zeroRatePct(df, v.tau_from_valuation, skeleton.compounding) };
     });
   }
 
@@ -411,10 +414,18 @@ LAB_SCRIPT = """
       function(el) { return (el.value || '').trim() || 'Cenário'; }
     );
 
+    // Baseline de mercado: o próprio caminho reunião-a-reunião que o Mkt
+    // Δbps mostra, rodado pelo MESMO motor -- não é mais lido de um campo
+    // fixo do skeleton (ver comentário em computeScenario).
+    var marketBps = skeleton.meetings.map(function(m) { return m.market_change_bps; });
+    var marketBaseline = computeScenario(skeleton, marketBps);
+
     var scenarioVertices = scenarioNames.map(function(name, s) {
       var inputs = document.querySelectorAll('#lab-panel-' + country + ' .lab-bps-input[data-scenario="' + s + '"]');
       var bps = Array.prototype.map.call(inputs, function(el) { return parseFloat(el.value) || 0; });
-      return computeScenario(skeleton, bps);
+      var result = computeScenario(skeleton, bps);
+      result.forEach(function(r, i) { r.delta_bps = (r.scenario_pct - marketBaseline[i].scenario_pct) * 100; });
+      return result;
     });
 
     var domain = 5;
@@ -422,10 +433,10 @@ LAB_SCRIPT = """
       vertices.forEach(function(v) { domain = Math.max(domain, Math.abs(v.delta_bps)); });
     });
 
-    renderVertexResults(country, skeleton, scenarioNames, scenarioVertices, domain);
+    renderVertexResults(country, skeleton, scenarioNames, marketBaseline, scenarioVertices, domain);
   }
 
-  function renderVertexResults(country, skeleton, scenarioNames, scenarioVertices, domain) {
+  function renderVertexResults(country, skeleton, scenarioNames, marketBaseline, scenarioVertices, domain) {
     // Cabeçalho via createElement/textContent (não innerHTML) -- os nomes
     // dos cenários são texto livre digitado pelo usuário, então concatenar
     // em innerHTML aqui seria um self-XSS real.
@@ -447,7 +458,7 @@ LAB_SCRIPT = """
     var rowsHtml = skeleton.vertices.map(function(v, i) {
       var cells = '<td class="ink-secondary">' + v.maturity + '</td>' +
         '<td class="ink-secondary">' + v.label + '</td>' +
-        '<td class="num">' + fmtPct(v.market_zero_pct) + '</td>';
+        '<td class="num">' + fmtPct(marketBaseline[i].scenario_pct) + '</td>';
       for (var s = 0; s < scenarioVertices.length; s++) {
         var r = scenarioVertices[s][i];
         cells += '<td class="num heat-cell" style="' + heatStyle(r.delta_bps, domain) + '">' + fmtBps(r.delta_bps) + '</td>';

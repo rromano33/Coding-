@@ -17,10 +17,10 @@ The scenario is an ABSOLUTE path (Ricardo, 29/07/2026): the user types the
 actual bps move they think happens at each meeting, not a shock relative
 to what the market already prices -- "surprise" only makes sense measured
 against today's market, which is exactly what pairing this skeleton's
-market_forward_pct/market_zero_pct columns against the user's typed path
-gives for free, without needing a second "shock" concept in the browser.
+market_forward_pct against the user's typed path gives for free, without
+needing a second "shock" concept in the browser.
 
-IMPORTANT (Ricardo, 29/07/2026 -- bug real, achado por print de tela): a
+IMPORTANT #1 (Ricardo, 29/07/2026 -- bug real, achado por print de tela): a
 tabela inicial (heatmap/cards) e a tabela de cenários interativos "não
 batiam", porque cada uma calculava o bps precificado por reunião do seu
 próprio jeito -- os cards leem de priced_bc_<país>_<data>.csv, que dependendo
@@ -33,6 +33,21 @@ diferente (às vezes MUITO diferente -- ruído de interpolação entre pilares
 esparsos). Por isso market_forward_pct/market_change_bps agora vêm como
 parâmetro (direto do mesmo CSV que os cards leem), nunca recomputados aqui --
 garante que as duas tabelas sempre saem exatamente da mesma base.
+
+IMPORTANT #2 (Ricardo, 30/07/2026 -- segundo bug real, achado do mesmo
+jeito): mesmo depois do fix acima, digitar EXATAMENTE o caminho que o "Mkt
+Δbps" mostra como cenário não dava impacto zero nos vértices -- porque o
+skeleton costumava expor um "market_zero_pct" por vértice calculado via
+curve.zero_rate() na curva EXATA (a mesma usada pra precificar posições),
+enquanto o caminho de reuniões (market_forward_pct/market_change_bps) vem
+da curva do RELATÓRIO (NSS/linear-rate/split/FRA-direto conforme o país,
+ver IMPORTANT #1) -- duas curvas diferentes, nunca batiam. A correção não
+mexe em Python: o "market_zero_pct" por vértice foi removido do skeleton de
+propósito, e o baseline de mercado passou a ser calculado no PRÓPRIO
+navegador rodando o motor do cenário com o caminho de reuniões do mercado
+como input (ver LAB_SCRIPT/computeLab em build_dashboard.py) -- isso
+garante, por construção (mesma função determinística chamada duas vezes com
+o mesmo input), que cenário == mercado sempre dá impacto zero.
 """
 from __future__ import annotations
 
@@ -108,7 +123,6 @@ def build_lab_skeleton(
             "maturity": maturity.isoformat(),
             "label": _vertex_label(country, curve.valuation_date, maturity),
             "tau_from_valuation": curve.tau(curve.valuation_date, maturity),
-            "market_zero_pct": curve.zero_rate(maturity) * 100,
         }
         if maturity <= last_boundary:
             # 1-based index into `meetings`/boundary_dates -- the first
