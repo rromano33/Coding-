@@ -35,7 +35,7 @@ def _reports(meetings=MEETINGS, implied_change_bps=None):
 
 def test_skeleton_has_one_meeting_entry_per_meeting_with_correct_tau():
     curve = _curve(MEETINGS)
-    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
 
     assert [m["date"] for m in skeleton["meetings"]] == [d.isoformat() for d in MEETINGS]
     assert skeleton["meetings"][0]["tau"] == pytest.approx(curve.tau(VALUATION_DATE, MEETINGS[0]))
@@ -55,7 +55,7 @@ def test_meeting_market_fields_come_from_report_not_recomputed_from_curve():
     curve = _curve(MEETINGS, rate=0.10)  # curva flat -- forward_rate cru daria 0bps sempre
     reports = _reports(implied_change_bps=[-17.0, 8.0, 25.0])
 
-    skeleton = build_lab_skeleton(curve, reports, current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, reports, current_policy_rate=0.095, country="chile")
 
     assert skeleton["meetings"][0]["market_change_bps"] == pytest.approx(-17.0)
     assert skeleton["meetings"][1]["market_change_bps"] == pytest.approx(8.0)
@@ -68,7 +68,7 @@ def test_meeting_market_fields_come_from_report_not_recomputed_from_curve():
 
 def test_skeleton_top_level_fields():
     curve = _curve(MEETINGS)
-    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
     assert skeleton["valuation_date"] == VALUATION_DATE.isoformat()
     assert skeleton["compounding"] == "exponential"
     assert skeleton["current_policy_rate_pct"] == pytest.approx(9.5)
@@ -78,7 +78,7 @@ def test_vertex_within_horizon_gets_segment_index_and_local_tau():
     # vértice cai dentro do 2º segmento (entre a 1ª e a 2ª reunião)
     vertex_date = date(2026, 4, 1)
     curve = _curve([vertex_date] + MEETINGS)
-    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
 
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
     assert entry["segment_index"] == 2  # boundary_dates = [val, m0, m1, m2] -- m1 é o índice 2
@@ -89,7 +89,7 @@ def test_vertex_within_horizon_gets_segment_index_and_local_tau():
 def test_vertex_beyond_last_meeting_gets_tail_fields():
     vertex_date = date(2027, 1, 1)  # depois da última reunião (2026-06-01)
     curve = _curve([vertex_date] + MEETINGS)
-    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
 
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
     assert entry["segment_index"] is None
@@ -100,7 +100,7 @@ def test_vertex_beyond_last_meeting_gets_tail_fields():
 def test_vertex_market_zero_matches_curve_directly():
     vertex_date = MEETINGS[1]
     curve = _curve([vertex_date] + MEETINGS, rate=0.12)
-    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
     entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
     assert entry["market_zero_pct"] == pytest.approx(curve.zero_rate(vertex_date) * 100)
 
@@ -108,4 +108,29 @@ def test_vertex_market_zero_matches_curve_directly():
 def test_raises_when_no_meetings_given():
     curve = _curve(MEETINGS)
     with pytest.raises(ValueError, match="pelo menos 1 reunião"):
-        build_lab_skeleton(curve, [], current_policy_rate=0.095)
+        build_lab_skeleton(curve, [], current_policy_rate=0.095, country="chile")
+
+
+def test_vertex_label_is_di1_contract_code_for_brazil():
+    """Ricardo (29/07/2026): quer o 'nome' do vértice (código do DI1 pro
+    Brasil) ao lado do vencimento na tabela de impacto."""
+    vertex_date = date(2027, 1, 4)  # 1o dia útil de jan/2027 -> contrato F27
+    curve = _curve([vertex_date] + MEETINGS)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="brazil")
+    entry = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_date.isoformat())
+    assert entry["label"] == "DIF27"
+
+
+def test_vertex_label_is_generic_tenor_for_non_brazil_countries():
+    """Pros demais países (sem código de contrato próprio), o 'nome' é um
+    tenor aproximado (3M, 18M, 2Y, ...) contado a partir da data de
+    valuation."""
+    vertex_3m = date(2026, 4, 6)  # ~3 meses depois de 2026-01-05
+    vertex_2y = date(2028, 1, 5)  # exatamente 2 anos depois
+    curve = _curve([vertex_3m, vertex_2y] + MEETINGS)
+    skeleton = build_lab_skeleton(curve, _reports(), current_policy_rate=0.095, country="chile")
+
+    entry_3m = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_3m.isoformat())
+    entry_2y = next(v for v in skeleton["vertices"] if v["maturity"] == vertex_2y.isoformat())
+    assert entry_3m["label"] == "3M"
+    assert entry_2y["label"] == "2Y"

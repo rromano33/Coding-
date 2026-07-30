@@ -247,7 +247,7 @@ def build_lab_section_data(settings: dict, processed_dir: Path, country: str, co
         }
         for _, r in report_df.iterrows()
     ]
-    skeleton = build_lab_skeleton(curve, meeting_reports, current_policy_rate)
+    skeleton = build_lab_skeleton(curve, meeting_reports, current_policy_rate, country)
 
     return {"country": country, "label": country_label, "skeleton": skeleton}
 
@@ -431,7 +431,7 @@ LAB_SCRIPT = """
     // em innerHTML aqui seria um self-XSS real.
     var thead = document.getElementById('lab-vertex-thead-' + country);
     while (thead.firstChild) thead.removeChild(thead.firstChild);
-    [['Vencimento', false], ['Mercado', true]].forEach(function(pair) {
+    [['Vencimento', false], ['Nome', false], ['Mercado', true]].forEach(function(pair) {
       var th = document.createElement('th');
       if (pair[1]) th.className = 'num';
       th.textContent = pair[0];
@@ -446,6 +446,7 @@ LAB_SCRIPT = """
 
     var rowsHtml = skeleton.vertices.map(function(v, i) {
       var cells = '<td class="ink-secondary">' + v.maturity + '</td>' +
+        '<td class="ink-secondary">' + v.label + '</td>' +
         '<td class="num">' + fmtPct(v.market_zero_pct) + '</td>';
       for (var s = 0; s < scenarioVertices.length; s++) {
         var r = scenarioVertices[s][i];

@@ -39,14 +39,43 @@ from __future__ import annotations
 from datetime import date
 
 from emrates.curves.base import DiscountCurve
+from emrates.data.ticker_parsing import brazil_di1_label
+
+_AVG_DAYS_PER_MONTH = 30.4368
 
 
-def build_lab_skeleton(curve: DiscountCurve, meeting_reports: list[dict], current_policy_rate: float) -> dict:
+def _tenor_label(valuation_date: date, maturity: date) -> str:
+    """Rótulo genérico de tenor (3M, 18M, 2Y, 2Y6M, ...) pra países sem um
+    código de contrato próprio -- Ricardo (29/07/2026) pediu um "nome" ao
+    lado do vencimento na tabela de impacto por vértice, pra ficar mais
+    fácil de reconhecer o vértice sem decorar a data exata."""
+    months = round((maturity - valuation_date).days / _AVG_DAYS_PER_MONTH)
+    if months <= 0:
+        return "0M"
+    if months < 12:
+        return f"{months}M"
+    years, rem_months = divmod(months, 12)
+    return f"{years}Y" if rem_months == 0 else f"{years}Y{rem_months}M"
+
+
+def _vertex_label(country: str, valuation_date: date, maturity: date) -> str:
+    if country == "brazil":
+        return brazil_di1_label(maturity)
+    return _tenor_label(valuation_date, maturity)
+
+
+def build_lab_skeleton(
+    curve: DiscountCurve, meeting_reports: list[dict], current_policy_rate: float, country: str
+) -> dict:
     """meeting_reports: uma linha por reunião, na MESMA fonte usada pelos
     cards/heatmap (priced_bc_<país>_<data>.csv) -- cada dict precisa ter
     "meeting_date" (date), "implied_change_bps" e "cumulative_change_from_spot_bps"
     (mesmos nomes de coluna do CSV). Não é recalculado a partir da curva aqui
-    de propósito -- ver o docstring do módulo."""
+    de propósito -- ver o docstring do módulo.
+
+    country: usado só pra escolher o "nome" de cada vértice na tabela de
+    impacto -- código de contrato DI1 (DIF27, DIN28, ...) pro Brasil,
+    tenor aproximado (3M, 18M, 2Y, ...) pros demais países."""
     meeting_reports = sorted(meeting_reports, key=lambda m: m["meeting_date"])
     if not meeting_reports:
         raise ValueError("build_lab_skeleton precisa de pelo menos 1 reunião")
@@ -77,6 +106,7 @@ def build_lab_skeleton(curve: DiscountCurve, meeting_reports: list[dict], curren
     for maturity in curve.pillar_dates:
         entry = {
             "maturity": maturity.isoformat(),
+            "label": _vertex_label(country, curve.valuation_date, maturity),
             "tau_from_valuation": curve.tau(curve.valuation_date, maturity),
             "market_zero_pct": curve.zero_rate(maturity) * 100,
         }

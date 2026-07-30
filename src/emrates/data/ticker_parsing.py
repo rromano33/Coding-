@@ -19,6 +19,7 @@ _FUTURES_MONTH_CODES = {
     "F": 1, "G": 2, "H": 3, "J": 4, "K": 5, "M": 6,
     "N": 7, "Q": 8, "U": 9, "V": 10, "X": 11, "Z": 12,
 }
+_MONTH_CODE_BY_NUMBER = {month: letter for letter, month in _FUTURES_MONTH_CODES.items()}
 
 _DI1_PATTERN = re.compile(r"^OD([FGHJKMNQUVXZ])(\d{2})\s*Comdty$", re.IGNORECASE)
 
@@ -35,3 +36,13 @@ def brazil_di1_maturity(ticker: str, calendar: Calendar) -> date:
     month = _FUTURES_MONTH_CODES[match.group(1).upper()]
     year = 2000 + int(match.group(2))
     return calendar.adjust_following(date(year, month, 1))
+
+
+def brazil_di1_label(maturity: date) -> str:
+    """Inverse of brazil_di1_maturity: the DI1 contract code (B3/trading-desk
+    style, e.g. 'DIF27') for a pillar that lands on a contract month's first
+    business day. Ricardo (29/07/2026) wants this next to each vertex in the
+    scenario lab's impact table instead of just the raw maturity date."""
+    letter = _MONTH_CODE_BY_NUMBER[maturity.month]
+    year_code = maturity.year % 100
+    return f"DI{letter}{year_code:02d}"
