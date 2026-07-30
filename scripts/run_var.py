@@ -27,8 +27,20 @@ from riskvar.price_history import load_price_history
 from riskvar.report import build_risk_report
 
 
+CONFIG_PATH = Path("config/portfolio_risk.yaml")
+EXAMPLE_CONFIG_PATH = Path("config/portfolio_risk.example.yaml")
+
+
 def main() -> None:
-    settings = yaml.safe_load(open("config/portfolio_risk.yaml", encoding="utf-8"))
+    if not CONFIG_PATH.exists():
+        raise SystemExit(
+            f"\n{CONFIG_PATH} não existe ainda -- esse arquivo é pessoal (não vem no git), cada "
+            "trader tem o seu, apontando pra própria planilha de portfólio.\n\n"
+            f"Primeira vez rodando isso? Copie o template e edite o caminho da sua planilha:\n"
+            f"  cp {EXAMPLE_CONFIG_PATH} {CONFIG_PATH}\n"
+            f"  (depois edite paths.portfolio_xlsx em {CONFIG_PATH} pro caminho da sua planilha)\n"
+        )
+    settings = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
     loader = PortfolioLoader(settings["paths"]["portfolio_xlsx"], settings["sheet"], settings["columns"])
     positions = loader.load()

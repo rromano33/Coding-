@@ -95,14 +95,28 @@ automaticamente por ativo.
 python scripts/run_var.py             # gera Data/processed/var_report_<data>.csv e .html
 ```
 
-Ajuste `config/portfolio_risk.yaml` com o caminho real da sua planilha e
-os nomes das colunas/abas antes de rodar (já vem configurado com o
-layout confirmado: aba "Summary" com Classe | Ativo | BBG | Tipo |
-Posição, aba "Preços" com Classe/Ativo/BBG nas linhas e uma data por
-linha depois — ajuste se a sua planilha for diferente). Convenção de
-sinal do DV01: valor da posição para uma **alta** de 1bp na taxa (mesma
-convenção de `emrates.portfolio.risk.dv01`) — se a posição ganha quando a
-taxa sobe (ex: pagador em swap), o DV01 informado deve ser positivo.
+### Compartilhando com a mesa
+
+O motor de cálculo é o mesmo pra todo mundo — só o caminho/aba/colunas da
+planilha de cada trader muda, e isso fica num arquivo separado do código
+de propósito, pra ninguém sobrescrever o config de outra pessoa:
+
+1. Copie `config/portfolio_risk.example.yaml` (versionado, igual pra
+   todo mundo) para `config/portfolio_risk.yaml` (pessoal — no
+   `.gitignore`, nunca commitado).
+2. Edite `paths.portfolio_xlsx` em `config/portfolio_risk.yaml` pro
+   caminho real da SUA planilha, e os nomes de aba/coluna se a sua
+   planilha usar nomes diferentes (já vem configurado com o layout
+   confirmado: aba "Summary" com Classe | Ativo | BBG | Tipo | Posição,
+   aba "Preços" com Classe/Ativo/BBG nas linhas e uma data por linha
+   depois).
+3. Rode `python scripts/run_var.py` normalmente.
+
+Se o arquivo pessoal ainda não existir, `run_var.py` avisa exatamente
+esses passos antes de sair. Convenção de sinal do DV01: valor da posição
+para uma **alta** de 1bp na taxa (mesma convenção de
+`emrates.portfolio.risk.dv01`) — se a posição ganha quando a taxa sobe
+(ex: pagador em swap), o DV01 informado deve ser positivo.
 
 Além do CSV, o script gera um relatório HTML autocontido (abre offline, em
 qualquer navegador, sem precisar de internet) com os números principais em

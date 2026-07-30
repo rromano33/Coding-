@@ -11,3 +11,9 @@ Data/raw/*
 Data/processed/*
 !Data/raw/.gitkeep
 !Data/processed/.gitkeep
+
+# Config pessoal de cada trader (caminho/aba/colunas da própria planilha de
+# portfólio) — nunca versionado, pra compartilhar o código do VaR com a mesa
+# sem o config de um trader sobrescrever o de outro. Template compartilhado
+# fica em config/portfolio_risk.example.yaml (esse sim versionado).
+config/portfolio_risk.yaml

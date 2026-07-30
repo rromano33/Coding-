@@ -1,5 +1,22 @@
+# TEMPLATE compartilhado com a mesa -- este arquivo (portfolio_risk.example.yaml)
+# fica versionado no git, igual pra todo mundo. Seu config de verdade é uma
+# CÓPIA dele chamada "portfolio_risk.yaml" (sem ".example"), na mesma pasta
+# config/ -- esse nome é ignorado pelo git (.gitignore) de propósito, pra
+# cada trader poder apontar pro caminho/aba/colunas da SUA própria planilha
+# sem nunca sobrescrever o config de outra pessoa nem precisar dar commit
+# toda vez que muda algo local.
+#
+# Primeira vez rodando isso na sua máquina:
+#   1. copie este arquivo pra config/portfolio_risk.yaml
+#   2. edite paths.portfolio_xlsx (e sheet/columns abaixo, se sua planilha
+#      usar nomes diferentes de aba/coluna)
+#   3. rode: python scripts/run_var.py
+#
+# O motor de cálculo (src/riskvar/) é o mesmo pra todo mundo -- só esse
+# arquivo muda de trader pra trader.
+
 paths:
-  portfolio_xlsx: "Data/Portfolio.xlsx"   # confirmado 23/07/2026: fica direto em Data/, não Data/raw/
+  portfolio_xlsx: "Data/Portfolio.xlsx"   # caminho da SUA planilha de portfólio
   output_dir: "Data/processed"
 
 # Confirmado pela planilha real (22/07/2026): aba "Summary" com colunas
