@@ -82,8 +82,10 @@ sua máquina e acessar pelo IP dela na mesma rede Wi-Fi do celular
 ## Notificações push
 
 O app manda push notifications (stop atingido, alertas de risco, ou um
-lembrete diário se não tiver nada crítico) — um job roda 1x/dia (9h) no
-próprio backend.
+lembrete diário se não tiver nada crítico) — um job roda 1x/dia (17:30,
+horário de Brasília). Local, esse job roda dentro do próprio processo do
+backend; em produção (Render free) é disparado de fora, por um GitHub
+Actions agendado — ver "Deploy 24/7" abaixo.
 
 Setup:
 
@@ -127,48 +129,71 @@ compartilhar → "Adicionar à Tela de Início" → abra pelo ícone instalado
 (não pela aba do Safari) → Risco → ⚙ Opções → "Ativar notificações" →
 aceite a permissão → "Enviar notificação de teste".
 
-## Deploy 24/7
+## Deploy 24/7 (grátis)
 
-Backend no Render (Docker + disco persistente, sem precisar trocar de
-SQLite) e frontend no Vercel. Estimativa de custo: Render "Starter"
-(instância que não hiberna e suporta disco) fica em torno de US$7/mês;
-Vercel no plano Hobby é gratuito pra esse tamanho de app.
+Backend no Render (plano **free**) + [Turso](https://turso.tech) (banco
+SQLite-compatível hospedado, tier free permanente, sem cartão) + frontend
+no Vercel (Hobby, grátis). Custo total: **US$0**.
 
-### 1. Backend → Render
+O tradeoff de ser grátis: o Render free hiberna após ~15min sem tráfego —
+a primeira requisição depois de dormir demora alguns segundos (cold
+start). Sem disco persistente no free tier, por isso o Turso: ele é quem
+guarda os dados de verdade, não o disco do Render.
+
+O job de push diário (17:30 BRT) não pode depender do processo do backend
+estar acordado nesse horário — por isso ele é disparado de fora, por um
+GitHub Actions agendado (`.github/workflows/trading-diary-daily-reminder.yml`
+na raiz do repo) que chama `POST /push/run-daily-reminder`; a própria
+chamada HTTP acorda o Render se estiver dormindo.
+
+### 1. Banco → Turso
+
+1. Instalar o CLI: `curl -sSfL https://get.tur.so/install.sh | bash`
+2. `turso auth signup` (ou `login` se já tiver conta) — não pede cartão.
+3. `turso db create trading-diary`
+4. `turso db show trading-diary --url` → anota a URL (algo como
+   `libsql://trading-diary-SEU-USUARIO.turso.io`; **tire o prefixo
+   `libsql://`** — o backend usa só o host).
+5. `turso db tokens create trading-diary` → anota o token.
+
+### 2. Backend → Render
 
 1. [render.com](https://render.com) → **New** → **Web Service** → conecte o
    repo `rromano33/coding-`.
 2. **Root Directory**: `trading-diary/backend`.
-3. **Runtime**: Docker (Dockerfile Path: `Dockerfile`, já que o root
-   directory acima já aponta pra pasta certa).
-4. **Plan**: Starter (o free tier hiberna e não tem disco persistente —
-   não serve pra manter o SQLite entre reinícios).
-5. Aba **Disks** → adicionar disco: mount path `/app/data`, 1 GB (o
-   `DATABASE_URL` padrão do app já aponta pra esse caminho, não precisa
-   sobrescrever).
-6. Aba **Environment** → adicionar:
+3. **Runtime**: Docker (Dockerfile Path: `Dockerfile`).
+4. **Plan**: Free.
+5. Aba **Environment** → adicionar:
    - `SECRET_KEY`: qualquer string aleatória longa.
    - `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_CLAIM_EMAIL`: as
      mesmas chaves geradas pra push (veja seção acima) — **não** as chaves
      de teste deste repo, gere um par novo pra produção.
-   - `CORS_ORIGINS`: por ora deixe `["*"]`; depois do passo 2 (Vercel),
+   - `TURSO_DATABASE_URL`: o host do passo 1.4 (sem `libsql://`).
+   - `TURSO_AUTH_TOKEN`: o token do passo 1.5.
+   - `CRON_SECRET`: qualquer string aleatória longa (vai ser reusada no
+     GitHub Actions, passo 4).
+   - `ENABLE_INTERNAL_SCHEDULER`: `false` (o gatilho real é o GitHub
+     Actions, ver passo 4 — deixar o scheduler in-process ligado aqui só
+     arriscaria mandar push duplicado nos dias em que o Render por acaso
+     já estiver acordado no horário).
+   - `CORS_ORIGINS`: por ora deixe `["*"]`; depois do passo 3 (Vercel),
      volte aqui e troque pelo domínio real, ex.
      `["https://seu-app.vercel.app"]`.
-7. **Health Check Path**: `/health`.
-8. Deploy. Anota a URL gerada (`https://trading-diary-backend-xxxx.onrender.com`).
+6. **Health Check Path**: `/health`.
+7. Deploy. Anota a URL gerada (`https://trading-diary-backend-xxxx.onrender.com`).
 
 Há um `render.yaml` em `trading-diary/backend/` com essa configuração como
 Blueprint — pode tentar usá-lo direto (**New** → **Blueprint**, apontando
 pro arquivo), mas como o repo tem outros projetos na raiz o auto-detect do
 Render pode não achá-lo; se não achar, siga os passos manuais acima.
 
-### 2. Frontend → Vercel
+### 3. Frontend → Vercel
 
 1. [vercel.com](https://vercel.com) → **New Project** → importe o mesmo
    repo `rromano33/coding-`.
 2. **Root Directory**: `trading-diary/frontend` (framework Vite é
    auto-detectado).
-3. **Environment Variables** → `VITE_API_URL` = a URL do Render do passo 1
+3. **Environment Variables** → `VITE_API_URL` = a URL do Render do passo 2
    (ex. `https://trading-diary-backend-xxxx.onrender.com`). É embutida no
    build, então qualquer mudança nessa variável exige um redeploy.
 4. Deploy. Anota a URL gerada (`https://seu-app.vercel.app`).
@@ -180,11 +205,33 @@ O `vercel.json` já incluído faz o rewrite de todas as rotas pra
 de navegador — sem isso, atualizar a página numa rota tipo `/trades/5` dá
 404).
 
-### 3. Testar
+### 4. Push diário → GitHub Actions
 
-Abra a URL do Vercel no celular, crie a conta (ou reaproveite se migrou
-dados manualmente — **este deploy começa com banco vazio**, os trades
-salvos localmente não são migrados automaticamente), adicione à tela de
+1. No GitHub, repo `rromano33/coding-` → **Settings** → **Secrets and
+   variables** → **Actions** → adicionar:
+   - `CRON_SECRET`: o mesmo valor que você colocou no Render (passo 2).
+   - `BACKEND_URL`: a URL do Render (passo 2), sem barra no final.
+2. **Importante**: gatilhos `schedule:` do GitHub Actions só rodam no
+   **branch default** do repositório. Se este workflow ainda estiver só
+   no branch `claude/trading-diary-app-azsjok`, mergeie pro branch default
+   (ou troque o default nas configurações do repo) — senão o cron nunca
+   dispara sozinho.
+3. Pra testar sem esperar o horário: aba **Actions** do GitHub → o
+   workflow "Trading Diary — lembrete diário" → **Run workflow**
+   (`workflow_dispatch`).
+
+### 5. Backup local no Mac (opcional, recomendado)
+
+Rede de segurança extra além do Turso — `trading-diary/backend/scripts/`
+tem `backup_turso.sh` (dump diário via Turso CLI) e um `.plist` de
+exemplo pra rodar via `launchd` 1x/dia. Ver comentários nesses dois
+arquivos pra instalar.
+
+### 6. Testar
+
+Abra a URL do Vercel no celular, crie a conta (ou migre o trade real que
+já existia localmente — ver "Migração de dados" no `DEPLOY_CHECKLIST.md`,
+**este deploy começa com banco vazio** por padrão), adicione à tela de
 início e ative as notificações em Opções.
 
 ## Próximos passos possíveis

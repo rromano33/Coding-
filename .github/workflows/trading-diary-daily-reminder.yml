@@ -1,0 +1,30 @@
+name: Trading Diary — lembrete diário
+
+# Gatilho externo do push diário do Diário de Trades. Existe porque o
+# backend roda no plano free do Render, que hiberna após inatividade — o
+# scheduler in-process (APScheduler) do backend fica desligado em produção
+# (ENABLE_INTERNAL_SCHEDULER=false) e essa chamada HTTP é quem acorda o
+# serviço e dispara o lembrete de verdade. Ver trading-diary/CLAUDE.md.
+#
+# Importante: gatilhos "schedule" do GitHub Actions só rodam no branch
+# default do repositório — confirme que este workflow está no branch
+# default (ou mude o branch default nas configurações do repo) antes de
+# esperar que isso dispare sozinho.
+
+on:
+  schedule:
+    # 17:30 America/Sao_Paulo = 20:30 UTC (Brasil não observa horário de
+    # verão atualmente, UTC-3 fixo).
+    - cron: "30 20 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  trigger-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Chama o endpoint de lembrete diário
+        run: |
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.BACKEND_URL }}/push/run-daily-reminder"

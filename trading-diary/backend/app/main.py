@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -22,12 +23,31 @@ def _run_daily_reminder_job() -> None:
         db.close()
 
 
+_ENABLE_INTERNAL_SCHEDULER = os.environ.get("ENABLE_INTERNAL_SCHEDULER", "true").lower() == "true"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    scheduler.add_job(_run_daily_reminder_job, "cron", hour=9, minute=0, id="daily_reminder", replace_existing=True)
-    scheduler.start()
+    # Em produção (Render free) o processo pode estar hibernando às 17:30 e
+    # esse scheduler in-process simplesmente não roda — o gatilho real de
+    # produção é o GitHub Actions batendo em POST /push/run-daily-reminder
+    # (acorda o Render sozinho). Deixar essa env var unset/false no Render
+    # evita mandar push duplicado nos dias em que o processo por acaso já
+    # estiver acordado no horário. Local dev mantém default true.
+    if _ENABLE_INTERNAL_SCHEDULER:
+        scheduler.add_job(
+            _run_daily_reminder_job,
+            "cron",
+            hour=17,
+            minute=30,
+            timezone="America/Sao_Paulo",
+            id="daily_reminder",
+            replace_existing=True,
+        )
+        scheduler.start()
     yield
-    scheduler.shutdown()
+    if scheduler.running:
+        scheduler.shutdown()
 
 
 app = FastAPI(title="Trading Diary API", version="0.1.0", lifespan=lifespan)

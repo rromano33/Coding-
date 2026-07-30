@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Backup diário (22h local) do banco Turso de produção pro Mac.
+
+  Instalar (depois de trocar SEU_BANCO_TURSO pelo nome real do banco):
+    mkdir -p ~/trading-diary-backups
+    cp com.ricardoromano.trading-diary-backup.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.ricardoromano.trading-diary-backup.plist
+
+  Desinstalar:
+    launchctl unload ~/Library/LaunchAgents/com.ricardoromano.trading-diary-backup.plist
+    rm ~/Library/LaunchAgents/com.ricardoromano.trading-diary-backup.plist
+
+  Testar manualmente sem esperar o horário:
+    launchctl start com.ricardoromano.trading-diary-backup
+
+  Logs em ~/trading-diary-backups/backup.log e backup.err.log.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ricardoromano.trading-diary-backup</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/ricardoromano/Coding-/trading-diary/backend/scripts/backup_turso.sh</string>
+        <string>SEU_BANCO_TURSO</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>22</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/Users/ricardoromano/trading-diary-backups/backup.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/ricardoromano/trading-diary-backups/backup.err.log</string>
+
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

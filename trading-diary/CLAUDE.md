@@ -117,8 +117,10 @@ trading-diary/
   - `app/routers/push.py`: `GET /push/public-key`, `POST /push/subscribe`,
     `POST /push/unsubscribe`, `POST /push/test`.
   - Job diário agendado via APScheduler (`BackgroundScheduler`, cron
-    9h todo dia) registrado no `lifespan` do `main.py` — roda em thread própria
-    dentro do próprio processo do backend (não é um worker separado).
+    17:30 `America/Sao_Paulo` todo dia — horário e timezone explícitos,
+    decisão do usuário, não reabrir sem pedido novo) registrado no
+    `lifespan` do `main.py` — roda em thread própria dentro do próprio
+    processo do backend (não é um worker separado).
   - Chaves VAPID em `.env` (`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
     `VAPID_CLAIM_EMAIL`), geradas com
     `backend/scripts/generate_vapid_keys.py`. **Nunca commitar as chaves
@@ -170,17 +172,45 @@ trading-diary/
   antes de expor o backend publicamente.
 - **SQLite, não Postgres** — suficiente pro volume de dados de uma pessoa;
   trocar é só mudar `DATABASE_URL` (já abstraído em `config.py`).
-- **Deploy: Render (Docker + disco persistente) em vez de migrar pra
-  Postgres.** Decisão deliberada pra manter o SQLite (ver ponto acima) —
-  monta um disco em `/app/data` (mesmo caminho que `config.py` já usa por
-  default) no plano Starter do Render, que não hiberna e mantém o disco
-  entre deploys/restarts. Testado localmente (fora do Render) apontando
-  `DATABASE_URL` pra um caminho fixo, matando e subindo o processo de novo:
-  dado sobrevive. Frontend no Vercel (`vercel.json` com rewrite de SPA,
-  necessário por causa do `BrowserRouter`). Ver README.md → "Deploy 24/7"
-  pro passo a passo completo (inclui os campos exatos do dashboard do
-  Render/Vercel). `CORS_ORIGINS` no Render precisa ser atualizado pro
-  domínio real do Vercel depois do primeiro deploy do frontend.
+- **Deploy: Render free + Turso, não Render Starter pago + disco.**
+  Superseder de uma decisão anterior — motivo novo e explícito: usuário
+  não quer gastar nada com o app. Render free não tem disco persistente
+  (dado se perde a cada redeploy/restart) e hiberna após inatividade, mas
+  sem push isso deixou de importar (só usuário abrindo o app, cold start
+  de alguns segundos é aceitável). Turso (SQLite-compatível hospedado,
+  tier free permanente, sem cartão) resolve o disco: `config.py` monta
+  `resolved_database_url` (`sqlite+libsql://...`) quando
+  `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` estão setados (só em produção —
+  local dev continua 100% SQLite de arquivo, sem depender de rede).
+  `database.py` tem um branch específico pra isso (`sqlite:///` = arquivo
+  local com mkdir; `sqlite+libsql://` e qualquer outra coisa = engine
+  direto, sem mkdir).
+  - **Push num backend que hiberna**: o `BackgroundScheduler` in-process
+    (`main.py`) só roda se `ENABLE_INTERNAL_SCHEDULER` não for `"false"`
+    (default `true` — fica ligado local; no Render fica `false`, ver
+    `render.yaml`). O gatilho real de produção é externo: um GitHub
+    Actions agendado (`.github/workflows/trading-diary-daily-reminder.yml`
+    — **na raiz do repo**, não em `trading-diary/`, GitHub Actions não lê
+    workflow de subpasta) chama `POST /push/run-daily-reminder`
+    (protegido por header `X-Cron-Secret` == `settings.cron_secret`) às
+    17:30 BRT (20:30 UTC cron) — a própria chamada HTTP acorda o Render se
+    estiver dormindo. **Gatilhos `schedule:` do GitHub Actions só rodam
+    no branch default do repo** (hoje `claude/session-0asigz`, não
+    `trading-diary-app-azsjok`) — precisa mergear ou trocar o default
+    antes do cron disparar de verdade.
+  - **Backup extra pro Mac**: `backend/scripts/backup_turso.sh` (usa
+    `turso db shell <db> .dump`) + `backend/scripts/com.ricardoromano.
+    trading-diary-backup.plist` (`launchd`, roda 1x/dia) salvam dumps em
+    `~/trading-diary-backups/` (fora do repo, dado financeiro pessoal não
+    vai pro git), mantendo os últimos 30 dias. Rede de segurança, não a
+    defesa principal — a principal é o próprio Turso.
+  - Frontend continua no Vercel (`vercel.json`, rewrite de SPA por causa
+    do `BrowserRouter`) — isso não mudou, Vercel Hobby já era grátis.
+  - `render.yaml` atualizado: `plan: free`, sem bloco `disk:`, com as
+    env vars novas (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
+    `CRON_SECRET`, `ENABLE_INTERNAL_SCHEDULER=false`). Ver
+    `DEPLOY_CHECKLIST.md` pro passo a passo (Turso, Render, Vercel,
+    secrets do GitHub Actions).
 
 ## Como rodar
 

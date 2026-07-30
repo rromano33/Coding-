@@ -17,8 +17,22 @@ class Settings(BaseSettings):
     vapid_private_key: str = os.environ.get("VAPID_PRIVATE_KEY", "")
     vapid_claim_email: str = os.environ.get("VAPID_CLAIM_EMAIL", "ricardo.fipe@gmail.com")
 
+    # Turso (produção): se ambos setados, substitui o SQLite de arquivo local.
+    turso_database_url: str = os.environ.get("TURSO_DATABASE_URL", "")
+    turso_auth_token: str = os.environ.get("TURSO_AUTH_TOKEN", "")
+
+    # Segredo compartilhado com o workflow do GitHub Actions que dispara
+    # POST /push/run-daily-reminder (gatilho externo, ver app/routers/push.py).
+    cron_secret: str = os.environ.get("CRON_SECRET", "")
+
     class Config:
         env_file = ".env"
+
+    @property
+    def resolved_database_url(self) -> str:
+        if self.turso_database_url and self.turso_auth_token:
+            return f"sqlite+libsql://{self.turso_database_url}?authToken={self.turso_auth_token}&secure=true"
+        return self.database_url
 
 
 settings = Settings()

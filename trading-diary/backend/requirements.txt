@@ -11,3 +11,4 @@ python-multipart==0.0.9
 python-dotenv==1.0.1
 pywebpush==2.0.0
 APScheduler==3.10.4
+sqlalchemy-libsql==0.2.0
