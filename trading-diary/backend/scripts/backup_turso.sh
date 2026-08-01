@@ -9,6 +9,10 @@
 
 set -euo pipefail
 
+# launchd não carrega .bash_profile/.zprofile — garante que o turso CLI
+# (instalado em ~/.turso pelo instalador oficial) é encontrado mesmo assim.
+export PATH="$PATH:$HOME/.turso"
+
 DB_NAME="${1:?Uso: backup_turso.sh <nome-do-banco-turso>}"
 BACKUP_DIR="$HOME/trading-diary-backups"
 RETENTION_DAYS=30
