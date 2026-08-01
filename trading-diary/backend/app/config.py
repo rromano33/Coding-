@@ -29,9 +29,16 @@ class Settings(BaseSettings):
         env_file = ".env"
 
     @property
+    def use_turso(self) -> bool:
+        return bool(self.turso_database_url and self.turso_auth_token)
+
+    @property
     def resolved_database_url(self) -> str:
-        if self.turso_database_url and self.turso_auth_token:
-            return f"sqlite+libsql://{self.turso_database_url}?authToken={self.turso_auth_token}&secure=true"
+        # authToken NÃO vai na URL: o driver libsql_experimental só aceita via
+        # connect_args (auth_token=...), embutir na query string dá 401
+        # "empty JWT token" mesmo com o token certo. Ver database.py.
+        if self.use_turso:
+            return f"sqlite+libsql://{self.turso_database_url}?secure=true"
         return self.database_url
 
 
