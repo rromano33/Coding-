@@ -119,6 +119,7 @@ def main() -> None:
 
         min_pillar_tenor_days = cfg.get("min_pillar_tenor_days", 0)
         pillars = []
+        dropped_short_end = False
         for t, maturity in zip(curve_tickers, pillars_maturities):
             rate = prices[t.ticker] / 100.0
             if pd.isna(rate):
@@ -136,11 +137,29 @@ def main() -> None:
             # com um pilar (hoje, DF=1.0, tau=0.0)).
             if maturity <= valuation_date:
                 print(f"[{country}] pulei {t.ticker}: vencimento ({maturity}) é hoje ou já passou — contrato do mês corrente expirando, sem tenor válido pra curva.")
+                dropped_short_end = True
                 continue
             if (maturity - valuation_date).days < min_pillar_tenor_days:
                 print(f"[{country}] pulei {t.ticker}: tenor abaixo de min_pillar_tenor_days ({min_pillar_tenor_days}d) — liquidez considerada baixa demais.")
                 continue
             pillars.append(Pillar(maturity=maturity, rate=rate))
+
+        if dropped_short_end:
+            # O(s) pilar(es) descartado(s) acima carregavam a única
+            # informação de mercado pro trecho bem curto (entre hoje e o
+            # próximo pilar real, que pode já estar depois da próxima
+            # reunião do BC) -- sem eles, esse trecho vira extrapolação
+            # plana do próximo pilar real, "achatando" o corte/alta
+            # precificado bem em cima da próxima reunião (Ricardo,
+            # 03/08/2026: 1a reunião do Brasil saiu ~6bps quando a Bloomberg
+            # mostrava ~25bps de corte). Ancora o curtíssimo prazo com a
+            # taxa de política atual (sempre líquida, nunca degenerada) no
+            # próximo dia útil, preservando essa informação sem reintroduzir
+            # o pilar de tenor zero.
+            anchor_date = calendar.add_business_days(valuation_date, 1)
+            if not any(p.maturity == anchor_date for p in pillars):
+                pillars = sorted(pillars + [Pillar(maturity=anchor_date, rate=current_policy_rate)], key=lambda p: p.maturity)
+
         curve = build_curve_builder(cfg, calendar).build(valuation_date, pillars)
 
         fra_data = []
