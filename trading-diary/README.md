@@ -131,6 +131,12 @@ aceite a permissão → "Enviar notificação de teste".
 
 ## Deploy 24/7 (grátis)
 
+**Já está no ar:** frontend em https://coding-mbay.vercel.app, backend em
+https://coding-5ahe.onrender.com. Ver `DEPLOY_CHECKLIST.md` pro registro
+do que foi feito e `CLAUDE.md` → "Estado atual" pras pendências. O guia
+abaixo é a referência de como foi montado (útil se precisar recriar do
+zero — outra conta, outro banco, etc.).
+
 Backend no Render (plano **free**) + [Turso](https://turso.tech) (banco
 SQLite-compatível hospedado, tier free permanente, sem cartão) + frontend
 no Vercel (Hobby, grátis). Custo total: **US$0**.

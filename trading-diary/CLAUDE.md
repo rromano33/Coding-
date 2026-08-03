@@ -183,34 +183,91 @@ trading-diary/
   `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` estão setados (só em produção —
   local dev continua 100% SQLite de arquivo, sem depender de rede).
   `database.py` tem um branch específico pra isso (`sqlite:///` = arquivo
-  local com mkdir; `sqlite+libsql://` e qualquer outra coisa = engine
-  direto, sem mkdir).
+  local com mkdir; Turso = engine com `connect_args={"auth_token": ...}`;
+  qualquer outra coisa = genérico).
+  - **Bug real encontrado e corrigido**: `sqlalchemy-libsql==0.2.0` deixa
+    embutir `authToken` na query string da URL (`?authToken=...`), mas o
+    driver `libsql_experimental` por baixo **ignora isso** — só lê o
+    token via kwarg `auth_token=` passado em `connect_args`. Com o token
+    na URL dá 401 "empty JWT token" mesmo com o token certo. Testado
+    contra o Turso de produção real pra confirmar a correção (commit
+    `25035dd`). Se um dia atualizar essa lib, testar de novo — pode ter
+    sido corrigido upstream.
   - **Push num backend que hiberna**: o `BackgroundScheduler` in-process
     (`main.py`) só roda se `ENABLE_INTERNAL_SCHEDULER` não for `"false"`
-    (default `true` — fica ligado local; no Render fica `false`, ver
+    (default `true` — fica ligado local; no Render está `false`, ver
     `render.yaml`). O gatilho real de produção é externo: um GitHub
     Actions agendado (`.github/workflows/trading-diary-daily-reminder.yml`
     — **na raiz do repo**, não em `trading-diary/`, GitHub Actions não lê
     workflow de subpasta) chama `POST /push/run-daily-reminder`
     (protegido por header `X-Cron-Secret` == `settings.cron_secret`) às
     17:30 BRT (20:30 UTC cron) — a própria chamada HTTP acorda o Render se
-    estiver dormindo. **Gatilhos `schedule:` do GitHub Actions só rodam
-    no branch default do repo** (hoje `claude/session-0asigz`, não
-    `trading-diary-app-azsjok`) — precisa mergear ou trocar o default
-    antes do cron disparar de verdade.
+    estiver dormindo. Gatilhos `schedule:` do GitHub Actions só rodam no
+    branch default do repo — **já trocado** pro `claude/trading-diary-app-azsjok`
+    (era `claude/session-0asigz`). Testado via `workflow_dispatch` e
+    confirmado: notificação chegou no iPhone real do usuário.
   - **Backup extra pro Mac**: `backend/scripts/backup_turso.sh` (usa
-    `turso db shell <db> .dump`) + `backend/scripts/com.ricardoromano.
-    trading-diary-backup.plist` (`launchd`, roda 1x/dia) salvam dumps em
+    `turso db shell <db> .dump`) + `~/Library/LaunchAgents/com.ricardoromano.
+    trading-diary-backup.plist` (cópia local do `.plist` do repo, com
+    `SEU_BANCO_TURSO` já trocado por `trading-diary`) — **já instalado e
+    rodando** via `launchd`, 1x/dia às 22h. Salva dumps em
     `~/trading-diary-backups/` (fora do repo, dado financeiro pessoal não
-    vai pro git), mantendo os últimos 30 dias. Rede de segurança, não a
-    defesa principal — a principal é o próprio Turso.
+    vai pro git), mantendo os últimos 30 dias. Testado manualmente
+    (`launchctl start com.ricardoromano.trading-diary-backup`): gerou
+    dump real com as 17 linhas de dado do usuário. Rede de segurança, não
+    a defesa principal — a principal é o próprio Turso.
   - Frontend continua no Vercel (`vercel.json`, rewrite de SPA por causa
     do `BrowserRouter`) — isso não mudou, Vercel Hobby já era grátis.
   - `render.yaml` atualizado: `plan: free`, sem bloco `disk:`, com as
     env vars novas (`TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
-    `CRON_SECRET`, `ENABLE_INTERNAL_SCHEDULER=false`). Ver
-    `DEPLOY_CHECKLIST.md` pro passo a passo (Turso, Render, Vercel,
-    secrets do GitHub Actions).
+    `CRON_SECRET`, `ENABLE_INTERNAL_SCHEDULER=false`).
+
+## Estado atual — **já está em produção, no ar, testado**
+
+Não é mais um plano — isso está rodando de verdade desde 2026-08-01:
+
+- **Frontend**: https://coding-mbay.vercel.app (Vercel, projeto `coding-mbay`)
+- **Backend**: https://coding-5ahe.onrender.com (Render free, serviço `Coding-`)
+- **Banco**: Turso, banco `trading-diary` (conta `ricardoromano33`, org
+  `aws-us-east-1`). Dados reais do usuário (conta `ricardo.fipe@gmail.com`
+  + o trade USDBRL + framework de risco completo) foram migrados do
+  SQLite local pra lá — o SQLite local (`backend/data/trading_diary.db`)
+  foi limpo de contas de teste antes da migração e continua existindo só
+  como banco de **dev local**, não é mais a fonte de dados real.
+  `CORS_ORIGINS` no Render já apertado só pra URL da Vercel (não é mais
+  `["*"]`).
+- **Push diário**: GitHub Actions rodando no branch default (ver acima),
+  testado e confirmado entregando notificação real no iPhone do usuário.
+- **Backup**: `launchd` rodando local no Mac do usuário, testado.
+- Local (`uvicorn`/`vite dev`) continua funcionando normalmente pra
+  desenvolvimento — não precisa de Turso nem de nada em produção pra
+  iterar localmente, só cai no SQLite de arquivo de sempre.
+
+**Pendências não-bloqueantes:**
+- 1 commit local não empurrado pro remoto (`63308b1`, fix do
+  `backup_turso.sh`) — sem credencial de git disponível na sessão que fez
+  o deploy. Só afeta o script de backup local, não o que está em
+  produção. Rodar `git push origin claude/trading-diary-app-azsjok`
+  quando tiver como.
+- **Bug conhecido, não corrigido**: `RiskSettings.get_or_create` (em
+  `routers/risk_settings.py`) tem race condition — a página de Opções
+  dispara 5 GETs em paralelo na primeira visita de um usuário
+  **totalmente novo**, e duas requisições podem tentar criar a mesma
+  linha singleton ao mesmo tempo, batendo em `UNIQUE constraint failed`
+  (vira 500, que sem headers de CORS aparece como falso erro de CORS no
+  navegador). Baixo risco pro usuário real (já semeado), mas afeta
+  qualquer conta nova. Não precisa nem git — só cria uma conta e visita
+  `/risco/opcoes` rapidinho pra reproduzir.
+- **Credenciais usadas neste deploy não ficaram salvas em lugar nenhum
+  meu** (nem deveriam) — se uma sessão futura precisar mexer em
+  Render/Vercel/GitHub programaticamente: (1) Vercel CLI tem token
+  cacheado em `~/Library/Application Support/com.vercel.cli/auth.json`
+  (`npx vercel whoami` confirma) — dá pra usar a API REST da Vercel
+  direto com esse token, sem pedir nada ao usuário; (2) Render e GitHub
+  **não têm** credencial cacheada — GitHub em particular só aceita
+  Personal Access Token (login é via Google, sem senha tradicional); se
+  precisar, pedir um token novo ao usuário (ele já fez isso duas vezes
+  nesta sessão, sabe o caminho: github.com/settings/tokens).
 
 ## Como rodar
 
@@ -232,14 +289,25 @@ padrão (`VITE_API_URL` em `.env`, ver `.env.example`).
 
 ## Branch
 
-Todo o trabalho até agora está no branch `claude/trading-diary-app-azsjok`
-do repo `rromano33/coding-` (que também contém um projeto Python
-não-relacionado, `emrates`, na raiz — não mexer nele por engano).
+Todo o trabalho está no branch `claude/trading-diary-app-azsjok` do repo
+`rromano33/Coding-` (que também contém um projeto Python não-relacionado
+na raiz — `Data/`, `config/`, `scripts/`, `src/`, `tests/` — não mexer
+nele por engano). **Esse branch é o branch default do repositório**
+(trocado de `claude/session-0asigz` pra este, necessário pro cron do
+GitHub Actions funcionar — ver "Estado atual" acima). Uma sessão nova do
+Claude Code que abrir este repo do zero deve cair aqui automaticamente.
 
 ## Ideias de próximos passos (não compromissos, só notas)
 
+- Corrigir a race condition do `RiskSettings.get_or_create` (ver
+  "Pendências" acima) — baixo esforço, é só serializar as 5 chamadas da
+  RiskSettingsPage ou fazer um `get_or_create` atômico (`INSERT OR
+  IGNORE` + `SELECT`).
 - Alembic, se o schema for mudar de novo com dados reais já no banco
   (agora que tem deploy 24/7 com dados reais, vale mais a pena que antes).
 - Separar "tese" de `strategy` se a sobreposição atrapalhar na prática.
 - Anexar screenshots de gráfico a um trade.
 - Fluxo de "fechar trade" separado do formulário de edição genérico.
+- Layout mais "profissional" (visual) — motivação original da conversa
+  que levou ao push notification; ainda não endereçado especificamente,
+  a UI atual é funcional mas básica (Tailwind puro, sem design system).
