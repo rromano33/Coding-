@@ -34,15 +34,19 @@ dados). Não é um produto multi-cliente.
 ```
 trading-diary/
   backend/app/
-    models.py            SQLAlchemy: User, Trade, MarketNote, JournalEntry,
+    models.py            SQLAlchemy: User, Trade, DailyNote,
                           RiskSettings, ConvictionTier, StopLayer,
                           DrawdownPhase, SeasonalPosture
     schemas.py            Pydantic (request/response)
     auth.py                hashing + JWT + get_current_user
-    calculations.py        pnl/r_multiple no fechamento do trade
+    calculations.py        fonte única da matemática de dinheiro: gross_pnl,
+                           compute_pnl/compute_r_multiple (fechamento do
+                           trade), position_risk_brl (usado por risk.py tb)
+    types_labels.py        rótulos PT (MARKET_LABELS/RISK_CLASS_LABELS) pro
+                           texto gerado em daily_notes.py
     risk_defaults.py       valores default de risco (seed on first access)
     routers/
-      auth.py, trades.py, market_notes.py, journal.py, stats.py
+      auth.py, trades.py, daily_notes.py, stats.py
       risk_settings.py     CRUD dos parâmetros de risco
       risk.py               GET /risk/status (calculado, ver abaixo)
   frontend/src/
@@ -52,8 +56,7 @@ trading-diary/
     pages/
       TradesPage, TradeFormPage, TradeDetailPage
       PerformancePage
-      MarketNotesPage
-      JournalPage
+      DailyNotePage (aba "Diário" — substitui os antigos Mercado + Diário)
       RiskStatusPage (aba "Risco"), RiskSettingsPage (Opções, /risco/opcoes)
     types.ts, utils/format.ts
 ```
@@ -65,18 +68,50 @@ trading-diary/
   ao registrar `exit_price` (`calculations.py:apply_computed_fields`).
   Campos: asset, market, direction, status, entry/exit date+price,
   quantity, stop/target, fees, strategy, tags, thesis, notes, emotions,
-  conviction, vol_diaria_pct, current_price (+ current_price_updated_at).
+  conviction, vol_diaria_pct, current_price (+ current_price_updated_at),
+  currency, fx_rate_to_brl, contract_multiplier, risk_class,
+  manual_adjustment.
   `unrealized_pnl` e `stop_alert` (`"perto"` | `"atingido"` | `None`) são
   **properties Python no modelo `Trade`**, não colunas — calculadas a
   partir de `current_price` vs. `entry_price`/`stop_price`/`direction`.
   Endpoint dedicado `PATCH /trades/{id}/price` pra marcar preço sem passar
   pelo form de edição completo.
+  - **PnL multi-moeda/multi-classe**: `entry_price`/`exit_price`/`quantity`
+    mudam de significado por `market` — FX é notional na moeda base +
+    taxa do par, futuros/opções são pontos/prêmio × `contract_multiplier`.
+    O resultado bruto é convertido pra R$ via `fx_rate_to_brl` (taxa única,
+    aplicada no momento do fechamento — não separa efeito cambial de
+    efeito de preço, decisão deliberada, ver abaixo) e somado a
+    `manual_adjustment` (ajuste manual em R$ pra scaling intraday: o
+    usuário aumenta/diminui posição ao longo do dia sem abrir trade novo).
+    `TradeFormPage` troca os rótulos e mostra/esconde Moeda, Taxa de
+    conversão e Multiplicador conforme o `market` selecionado.
+  - **`risk_class`** (`rates`/`fx`/`equities`/`other`) é **independente**
+    de `market` — existe só pra alimentar o P&L por classe do Diário
+    (ver abaixo), pré-selecionado por `market`
+    (`DEFAULT_RISK_CLASS_BY_MARKET` em `types.ts`) mas editável, porque um
+    "futuros" pode ser tanto um future de juro (RATES) quanto de índice
+    (EQUITIES) e isso não dá pra inferir do `market` sozinho.
 - **Performance**: `/stats/summary`, `/stats/equity-curve`,
   `/stats/by-strategy`, `/stats/by-asset`, `/stats/by-market`. Tudo
   calculado em Python a partir dos trades fechados (dataset pessoal,
   pequeno — não precisou de agregação SQL).
-- **Movimentos de mercado** e **Diário/Impressões**: CRUD simples, sem
-  lógica especial.
+- **Diário** (`DailyNote`, substitui os antigos `MarketNote`/`JournalEntry`):
+  segue a estrutura real do diário macro diário do usuário (Ontem,
+  Comentário geral, Oil/Commodities, Bolsas, Juros DM, Pricing DM, DXY/
+  DMFX, Moedas EM, BRL, Rates EM, Pricing EM, Meu book, P&L por classe,
+  Posições, O que espero de amanhã, Vol total USD/BRL, Risco de
+  portfólio). CRUD simples (`routers/daily_notes.py`), mais
+  `GET /daily-notes/prefill?date=` que **só sugere** valores iniciais
+  (não é dashboard ao vivo): "Ontem" vem do `espero_amanha` do registro
+  anterior, "P&L por classe" soma `Trade.pnl` dos trades fechados no dia
+  agrupados por `risk_class`, "Posições" lista os trades `status=="open"`
+  no momento — tudo isso vira texto editável no form, o registro salvo é
+  sempre o texto final (congelado), preservando anotações manuais tipo
+  "-> BRL90k de prêmio" que não existem no modelo de `Trade`.
+  `pricing_dm`/`pricing_em`/`vol_total_*`/`risco_portfolio` continuam
+  texto livre ou manual — estruturar isso (por banco central, por
+  metodologia de VaR) é escopo grande, não fiz agora.
 - **Framework de risco** (espelha uma planilha de referência do usuário —
   "Framework de Risco — Parâmetros do Book"):
   - `RiskSettings` (singleton por usuário): capital alocado, budget anual
@@ -105,7 +140,13 @@ trading-diary/
 - **Sizing sugerido** no form de trade: duas sugestões lado a lado —
   por distância ao stop (`risco_maximo / |entry - stop|`) e por
   volatilidade do ativo (`risco_maximo / (entry_price × vol_diaria_pct)`,
-  assumindo 1× vol diária como referência de risco).
+  assumindo 1× vol diária como referência de risco). Ambas agora dividem
+  também por `contract_multiplier` e multiplicam pela `fx_rate_to_brl`
+  quando a moeda não é BRL, senão o sizing sugerido saía errado pros
+  mesmos casos que quebravam o PnL (FX/futuros/opções). Mesma correção
+  aplicada em `risk.py::_position_risk` → `calculations.position_risk_brl`
+  (usado no sizing sugerido *e* na concentração de risco por
+  tese/classe em `GET /risk/status`).
 - **Push notifications (web push)**:
   - `PushSubscription` (modelo novo): `endpoint`/`p256dh`/`auth` por usuário,
     N por usuário (um por dispositivo/navegador instalado).
@@ -144,6 +185,15 @@ trading-diary/
 
 ## Decisões deliberadas — não reabrir sem motivo novo
 
+- **Conversão FX pra R$ é uma taxa única aplicada no fechamento**
+  (`fx_rate_to_brl`), não taxas separadas de entrada/saída. Decisão
+  explícita do usuário: mais simples, não separa efeito cambial de
+  efeito de preço. Se um dia isso incomodar, é campo novo + mudança na
+  fórmula de `calculations.compute_pnl`, não mudança de conceito.
+- **`risk_class` é campo separado de `market`**, não derivado dele — ver
+  "O que já está implementado" acima. Não tentar inferir `risk_class` a
+  partir de `market`/`asset` automaticamente; é decisão do usuário por
+  trade.
 - **"Tese" reaproveita o campo `Trade.strategy`** em vez de ter um campo
   dedicado. Foi uma decisão consciente pra não explodir o schema; o
   usuário está ciente. Se isso incomodar na prática, é uma migração
@@ -244,11 +294,22 @@ Não é mais um plano — isso está rodando de verdade desde 2026-08-01:
   iterar localmente, só cai no SQLite de arquivo de sempre.
 
 **Pendências não-bloqueantes:**
-- 1 commit local não empurrado pro remoto (`63308b1`, fix do
-  `backup_turso.sh`) — sem credencial de git disponível na sessão que fez
-  o deploy. Só afeta o script de backup local, não o que está em
-  produção. Rodar `git push origin claude/trading-diary-app-azsjok`
-  quando tiver como.
+- Commits locais não empurrados pro remoto (`63308b1` fix do
+  `backup_turso.sh`, e o commit que adiciona PnL multi-moeda/multi-classe
+  + Diário macro, ver "O que já está implementado") — sem credencial de
+  git disponível nas sessões que fizeram isso. Rodar
+  `git push origin claude/trading-diary-app-azsjok` quando tiver como.
+- **Antes de fazer deploy do commit de PnL/Diário em produção**: `Trade`
+  ganhou colunas novas (`currency`, `fx_rate_to_brl`, `contract_multiplier`,
+  `risk_class`, `manual_adjustment`) e existe uma tabela nova
+  (`daily_notes`). Sem Alembic, `create_all` cria a tabela nova sozinho,
+  mas **não adiciona colunas na tabela `trades` já existente no Turso** —
+  precisa rodar manualmente algo como
+  `ALTER TABLE trades ADD COLUMN currency TEXT;` (e as outras 4) via
+  `turso db shell trading-diary` antes de subir esse backend, senão os
+  requests que leem/escrevem `Trade` vão quebrar em produção. Baixo risco
+  (colunas nullable/com default, só 1 trade real no banco), mas é passo
+  manual — não fazer sem confirmar com o usuário na hora do deploy.
 - **Bug conhecido, não corrigido**: `RiskSettings.get_or_create` (em
   `routers/risk_settings.py`) tem race condition — a página de Opções
   dispara 5 GETs em paralelo na primeira visita de um usuário
