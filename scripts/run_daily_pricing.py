@@ -124,6 +124,19 @@ def main() -> None:
             if pd.isna(rate):
                 print(f"[{country}] pulei {t.ticker}: preço veio NaN da Bloomberg (sem cotação nesse ponto?).")
                 continue
+            # Vencimento hoje (ou já passado) dá tenor <= 0 -- sempre inválido
+            # como pilar de curva, pra qualquer país/estilo (zero_rate,
+            # par_swap, NSS depois). Não é uma questão de liquidez mínima
+            # configurável (isso é o check de min_pillar_tenor_days logo
+            # abaixo) -- é degenerado matematicamente (tau=0). Acontece de
+            # verdade: o contrato futuro do mês corrente (ex: DI1 front month
+            # no Brasil) vence no 1o dia útil do mês, e nos dias em que "hoje"
+            # é justamente esse dia útil, o vencimento bate exatamente na
+            # data de valuation (Ricardo, 03/08/2026 -- crashou fit_nss_curve
+            # com um pilar (hoje, DF=1.0, tau=0.0)).
+            if maturity <= valuation_date:
+                print(f"[{country}] pulei {t.ticker}: vencimento ({maturity}) é hoje ou já passou — contrato do mês corrente expirando, sem tenor válido pra curva.")
+                continue
             if (maturity - valuation_date).days < min_pillar_tenor_days:
                 print(f"[{country}] pulei {t.ticker}: tenor abaixo de min_pillar_tenor_days ({min_pillar_tenor_days}d) — liquidez considerada baixa demais.")
                 continue
