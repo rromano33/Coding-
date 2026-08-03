@@ -50,7 +50,23 @@ FRA_STRIP_COUNTRIES = {"czech", "poland", "hungary"}
 # priced_bc reads real pillars directly with an explicit 65/35 split across
 # multi-meeting segments instead of NSS (see central_banks/stripper.py's
 # strip_meeting_path_from_pillars docstring).
-PILLAR_SPLIT_COUNTRIES = {"colombia"}
+#
+# Brasil entrou aqui em 03/08/2026 (Ricardo, print + curve.json real
+# comparados contra a calculadora de CDI da própria Bloomberg): quando o
+# DI1 front-month vence bem no dia da rodada (ver skip de pilar degenerado
+# acima), o pilar real mais próximo fica bem mais longe que a próxima
+# reunião do Copom -- um "gap" largo com só 1 reunião dentro. Suavização
+# (NSS ou a cúbica da curva exata) trata esse gap como uma transição
+# gradual, "borrando" o corte pra dentro do trecho inteiro em vez de
+# concentrá-lo na reunião (1a reunião saía -6 a -11bps quando a Bloomberg
+# mostrava -24.6bps). strip_meeting_path_from_pillars lê o pilar real
+# direto e atribui a mudança do segmento inteiro à(s) reunião(ões) que
+# caem dentro dele -- com current_policy_rate como referência nativa do
+# primeiro segmento, chega a -21 a -22bps, bem mais perto da Bloomberg,
+# sem precisar de nenhum pilar sintético (ver dropped_short_end abaixo,
+# que continua existindo só pra nunca deixar um pilar de tenor zero
+# quebrar a curva em si, não pra informar o relatório).
+PILLAR_SPLIT_COUNTRIES = {"colombia", "brazil"}
 
 # Ricardo (29/07/2026) comparou o priced_bc do México contra a curva de TIIE
 # real dele no Bloomberg (mesmos tickers MPSW) e viu o NSS divergindo ~26bps

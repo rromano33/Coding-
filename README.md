@@ -176,6 +176,19 @@ se aproxima da referência dele (NSS divergia ~26bps acumulados até
 precificar posições/PnL de México continua com bootstrap de cupom, sem
 mudança — só o relatório de "quanto está precificado" foi trocado.
 
+Brasil usa leitura direta dos pilares reais + split 65/35 (mesmo método
+da Colômbia, `strip_meeting_path_from_pillars`) em vez de NSS desde
+03/08/2026: quando o DI1 front-month vence no próprio dia da rodada (algo
+que acontece mensalmente — ver o skip de pilar degenerado em
+`run_daily_pricing.py`), o pilar real mais próximo fica bem mais longe do
+que a próxima reunião do Copom, criando um "gap" largo com só 1 reunião
+dentro. Suavização (NSS ou a interpolação cúbica da curva exata) trata
+esse gap como transição gradual em vez de concentrar o corte/alta na
+própria reunião — comparado contra a calculadora de CDI da Bloomberg
+(Ricardo, 03/08/2026), a leitura direta com split chegou bem mais perto
+(~22bps vs. os ~25bps da Bloomberg, contra ~6-11bps que a suavização
+mostrava).
+
 ### Cenários de BC
 
 `central_banks/scenarios.py` recebe choques (em bps) em uma ou mais
