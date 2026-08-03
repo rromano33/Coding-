@@ -8,8 +8,7 @@ import TradesPage from "./pages/TradesPage";
 import TradeFormPage from "./pages/TradeFormPage";
 import TradeDetailPage from "./pages/TradeDetailPage";
 import PerformancePage from "./pages/PerformancePage";
-import MarketNotesPage from "./pages/MarketNotesPage";
-import JournalPage from "./pages/JournalPage";
+import DailyNotePage from "./pages/DailyNotePage";
 import RiskStatusPage from "./pages/RiskStatusPage";
 import RiskSettingsPage from "./pages/RiskSettingsPage";
 
@@ -27,8 +26,7 @@ export default function App() {
               <Route path="/trades/:id" element={<TradeDetailPage />} />
               <Route path="/trades/:id/edit" element={<TradeFormPage />} />
               <Route path="/performance" element={<PerformancePage />} />
-              <Route path="/mercado" element={<MarketNotesPage />} />
-              <Route path="/diario" element={<JournalPage />} />
+              <Route path="/diario" element={<DailyNotePage />} />
               <Route path="/risco" element={<RiskStatusPage />} />
               <Route path="/risco/opcoes" element={<RiskSettingsPage />} />
             </Route>

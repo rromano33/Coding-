@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.push_service import send_daily_reminder
-from app.routers import auth, journal, market_notes, push, risk, risk_settings, stats, trades
+from app.routers import auth, daily_notes, push, risk, risk_settings, stats, trades
 
 Base.metadata.create_all(bind=engine)
 
@@ -62,8 +62,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(trades.router)
-app.include_router(market_notes.router)
-app.include_router(journal.router)
+app.include_router(daily_notes.router)
 app.include_router(stats.router)
 app.include_router(risk_settings.router)
 app.include_router(risk.router)

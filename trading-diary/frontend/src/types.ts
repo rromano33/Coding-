@@ -11,6 +11,25 @@ export const MARKETS = [
   { value: "outro", label: "Outro" },
 ] as const;
 
+export type RiskClass = "rates" | "fx" | "equities" | "other";
+
+export const RISK_CLASSES: { value: RiskClass; label: string }[] = [
+  { value: "rates", label: "RATES" },
+  { value: "fx", label: "FX" },
+  { value: "equities", label: "EQUITIES" },
+  { value: "other", label: "OTHER" },
+];
+
+export const DEFAULT_RISK_CLASS_BY_MARKET: Record<string, RiskClass> = {
+  acoes: "equities",
+  futuros: "rates",
+  fx: "fx",
+  opcoes: "other",
+  cripto: "equities",
+  renda_fixa: "rates",
+  outro: "other",
+};
+
 export interface Trade {
   id: number;
   asset: string;
@@ -32,6 +51,11 @@ export interface Trade {
   emotions: string | null;
   conviction: Conviction | null;
   vol_diaria_pct: number | null;
+  currency: string | null;
+  fx_rate_to_brl: number | null;
+  contract_multiplier: number;
+  risk_class: RiskClass | null;
+  manual_adjustment: number;
   pnl: number | null;
   r_multiple: number | null;
   current_price: number | null;
@@ -64,29 +88,38 @@ export type TradeInput = Omit<
   | "stop_alert"
 >;
 
-export interface MarketNote {
+export interface DailyNote {
   id: number;
   date: string;
-  title: string;
-  content: string;
-  tags: string | null;
+  ontem: string | null;
+  comentario_geral: string | null;
+  oil_commodities: string | null;
+  bolsas: string | null;
+  juros_dm: string | null;
+  pricing_dm: string | null;
+  dxy_dmfx: string | null;
+  moedas_em: string | null;
+  brl_comment: string | null;
+  rates_em: string | null;
+  pricing_em: string | null;
+  meu_book: string | null;
+  pnl_por_classe: string | null;
+  posicoes: string | null;
+  espero_amanha: string | null;
+  vol_total_usd: number | null;
+  vol_total_brl: number | null;
+  risco_portfolio: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export type MarketNoteInput = Omit<MarketNote, "id" | "created_at" | "updated_at">;
+export type DailyNoteInput = Omit<DailyNote, "id" | "created_at" | "updated_at">;
 
-export interface JournalEntry {
-  id: number;
-  date: string;
-  mood: string | null;
-  discipline_score: number | null;
-  content: string;
-  created_at: string;
-  updated_at: string;
+export interface DailyNotePrefill {
+  ontem: string | null;
+  pnl_por_classe: string | null;
+  posicoes: string | null;
 }
-
-export type JournalEntryInput = Omit<JournalEntry, "id" | "created_at" | "updated_at">;
 
 export interface PerformanceSummary {
   total_trades: number;

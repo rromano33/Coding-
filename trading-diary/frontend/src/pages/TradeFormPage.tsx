@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { riskSettingsApi, tradesApi } from "../api/endpoints";
-import { CONVICTIONS, MARKETS, type ConvictionTier, type TradeInput } from "../types";
+import {
+  CONVICTIONS,
+  DEFAULT_RISK_CLASS_BY_MARKET,
+  MARKETS,
+  RISK_CLASSES,
+  type ConvictionTier,
+  type TradeInput,
+} from "../types";
 import { formatCurrency, formatNumber, toLocalInputValue } from "../utils/format";
 
 const EMPTY: TradeInput = {
@@ -24,7 +31,49 @@ const EMPTY: TradeInput = {
   emotions: "",
   conviction: null,
   vol_diaria_pct: null,
+  currency: "BRL",
+  fx_rate_to_brl: null,
+  contract_multiplier: 1,
+  risk_class: DEFAULT_RISK_CLASS_BY_MARKET.acoes,
+  manual_adjustment: 0,
 };
+
+function labelsForMarket(market: string) {
+  if (market === "fx") {
+    return {
+      quantity: "Notional (moeda base)",
+      entryPrice: "Taxa de entrada",
+      exitPrice: "Taxa de saída",
+      showMultiplier: false,
+      multiplierLabel: "",
+    };
+  }
+  if (market === "opcoes") {
+    return {
+      quantity: "Quantidade (contratos)",
+      entryPrice: "Prêmio de entrada",
+      exitPrice: "Prêmio de saída",
+      showMultiplier: true,
+      multiplierLabel: "Multiplicador (ações por contrato)",
+    };
+  }
+  if (market === "futuros") {
+    return {
+      quantity: "Quantidade (contratos)",
+      entryPrice: "Pontos de entrada",
+      exitPrice: "Pontos de saída",
+      showMultiplier: true,
+      multiplierLabel: "Multiplicador (valor por ponto)",
+    };
+  }
+  return {
+    quantity: "Quantidade",
+    entryPrice: "Preço de entrada",
+    exitPrice: "Preço de saída",
+    showMultiplier: false,
+    multiplierLabel: "",
+  };
+}
 
 export default function TradeFormPage() {
   const { id } = useParams();
@@ -48,14 +97,21 @@ export default function TradeFormPage() {
     });
   }, [id]);
 
+  const labels = labelsForMarket(form.market);
+  const isForeignCurrency = Boolean(form.currency && form.currency.trim().toUpperCase() !== "BRL");
+  const fxRate = isForeignCurrency ? form.fx_rate_to_brl : 1;
+  const multiplier = form.contract_multiplier || 1;
+
   const selectedTier = tiers.find((t) => t.label === form.conviction) ?? null;
   const riskDistance = form.stop_price !== null ? Math.abs(form.entry_price - form.stop_price) : null;
+  const riskPerUnitBRL = riskDistance !== null && fxRate ? riskDistance * multiplier * fxRate : null;
   const suggestedQuantityStop =
-    selectedTier && riskDistance && riskDistance > 0 ? Math.floor(selectedTier.risco_maximo / riskDistance) : null;
+    selectedTier && riskPerUnitBRL && riskPerUnitBRL > 0 ? Math.floor(selectedTier.risco_maximo / riskPerUnitBRL) : null;
 
   const volAmount = form.vol_diaria_pct && form.entry_price ? form.entry_price * (form.vol_diaria_pct / 100) : null;
+  const volAmountBRL = volAmount !== null && fxRate ? volAmount * multiplier * fxRate : null;
   const suggestedQuantityVol =
-    selectedTier && volAmount && volAmount > 0 ? Math.floor(selectedTier.risco_maximo / volAmount) : null;
+    selectedTier && volAmountBRL && volAmountBRL > 0 ? Math.floor(selectedTier.risco_maximo / volAmountBRL) : null;
 
   function field<K extends keyof TradeInput>(key: K) {
     return {
@@ -70,6 +126,9 @@ export default function TradeFormPage() {
           "target_price",
           "fees",
           "vol_diaria_pct",
+          "fx_rate_to_brl",
+          "contract_multiplier",
+          "manual_adjustment",
         ].includes(key as string);
         setForm((f) => ({ ...f, [key]: isNumeric ? (raw === "" ? null : Number(raw)) : raw }));
       },
@@ -113,7 +172,16 @@ export default function TradeFormPage() {
           </div>
           <div>
             <label>Mercado</label>
-            <select {...field("market")}>
+            <select
+              value={form.market}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  market: e.target.value,
+                  risk_class: DEFAULT_RISK_CLASS_BY_MARKET[e.target.value] ?? f.risk_class,
+                }))
+              }
+            >
               {MARKETS.map((m) => (
                 <option key={m.value} value={m.value}>
                   {m.label}
@@ -132,12 +200,31 @@ export default function TradeFormPage() {
             </select>
           </div>
           <div>
-            <label>Quantidade</label>
+            <label>{labels.quantity}</label>
             <input type="number" step="any" required {...field("quantity")} />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label>Moeda</label>
+            <input placeholder="BRL, USD, JPY..." {...field("currency")} />
+          </div>
+          {isForeignCurrency && (
+            <div>
+              <label>Taxa de conversão pra R$</label>
+              <input type="number" step="any" placeholder="ex: 5.42" {...field("fx_rate_to_brl")} />
+            </div>
+          )}
+          {labels.showMultiplier && (
+            <div>
+              <label>{labels.multiplierLabel}</label>
+              <input type="number" step="any" {...field("contract_multiplier")} />
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-3">
           <div>
             <label>Data de entrada</label>
             <input
@@ -148,12 +235,12 @@ export default function TradeFormPage() {
             />
           </div>
           <div>
-            <label>Preço de entrada</label>
+            <label>{labels.entryPrice}</label>
             <input type="number" step="any" required {...field("entry_price")} />
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-3">
           <div>
             <label>Data de saída</label>
             <input
@@ -163,7 +250,7 @@ export default function TradeFormPage() {
             />
           </div>
           <div>
-            <label>Preço de saída</label>
+            <label>{labels.exitPrice}</label>
             <input type="number" step="any" {...field("exit_price")} />
           </div>
         </div>
@@ -180,6 +267,23 @@ export default function TradeFormPage() {
           <div>
             <label>Taxas/custos</label>
             <input type="number" step="any" {...field("fees")} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label>Ajuste manual (R$, scaling intraday)</label>
+            <input type="number" step="any" {...field("manual_adjustment")} />
+          </div>
+          <div>
+            <label>Classe de risco (p/ diário)</label>
+            <select {...field("risk_class")}>
+              {RISK_CLASSES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
@@ -210,6 +314,12 @@ export default function TradeFormPage() {
               Risco máximo para convicção <span className="text-slate-200">{selectedTier.label}</span>:{" "}
               <span className="text-slate-200">{formatCurrency(selectedTier.risco_maximo)}</span>
             </p>
+
+            {isForeignCurrency && !fxRate && (
+              <p className="text-amber-400">
+                Preencha a taxa de conversão pra R$ pra calcular o sizing sugerido nessa moeda.
+              </p>
+            )}
 
             {suggestedQuantityStop !== null ? (
               <div className="flex items-center justify-between">

@@ -3,6 +3,7 @@ import datetime
 from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.calculations import gross_pnl
 from app.database import Base
 
 
@@ -20,8 +21,7 @@ class User(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
 
     trades: Mapped[list["Trade"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    market_notes: Mapped[list["MarketNote"]] = relationship(back_populates="user", cascade="all, delete-orphan")
-    journal_entries: Mapped[list["JournalEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    daily_notes: Mapped[list["DailyNote"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     risk_settings: Mapped["RiskSettings | None"] = relationship(
         back_populates="user", cascade="all, delete-orphan", uselist=False
     )
@@ -58,6 +58,12 @@ class Trade(Base):
     conviction: Mapped[str | None] = mapped_column(String(16), nullable=True)  # baixa | media | alta | extrema
     vol_diaria_pct: Mapped[float | None] = mapped_column(Float, nullable=True)  # vol diária estimada do ativo, ex: 0.02 = 2%
 
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)  # ex: BRL, USD, JPY; vazio = BRL
+    fx_rate_to_brl: Mapped[float | None] = mapped_column(Float, nullable=True)  # taxa de conversão no fechamento
+    contract_multiplier: Mapped[float] = mapped_column(Float, default=1.0)  # valor por ponto/contrato (futuros, opções)
+    risk_class: Mapped[str | None] = mapped_column(String(16), nullable=True)  # rates | fx | equities | other (p/ diário)
+    manual_adjustment: Mapped[float] = mapped_column(Float, default=0.0)  # ajuste manual em R$ (scaling intraday)
+
     current_price: Mapped[float | None] = mapped_column(Float, nullable=True)  # última marcação manual (posição aberta)
     current_price_updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -77,11 +83,11 @@ class Trade(Base):
     def unrealized_pnl(self) -> float | None:
         if self.status != "open" or self.current_price is None:
             return None
-        if self.direction == "short":
-            gross = (self.entry_price - self.current_price) * self.quantity
-        else:
-            gross = (self.current_price - self.entry_price) * self.quantity
-        return gross - self.fees
+        gross = gross_pnl(self.direction, self.entry_price, self.current_price, self.quantity, self.contract_multiplier or 1.0)
+        net = gross - self.fees
+        if self.currency and self.currency.upper() != "BRL" and self.fx_rate_to_brl:
+            net *= self.fx_rate_to_brl
+        return net + (self.manual_adjustment or 0.0)
 
     @property
     def stop_alert(self) -> str | None:
@@ -105,38 +111,37 @@ class Trade(Base):
         return None
 
 
-class MarketNote(Base):
-    __tablename__ = "market_notes"
+class DailyNote(Base):
+    __tablename__ = "daily_notes"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
 
-    date: Mapped[datetime.datetime] = mapped_column(DateTime)
-    title: Mapped[str] = mapped_column(String(255))
-    content: Mapped[str] = mapped_column(Text)
-    tags: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    date: Mapped[datetime.datetime] = mapped_column(DateTime, index=True)
+
+    ontem: Mapped[str | None] = mapped_column(Text, nullable=True)
+    comentario_geral: Mapped[str | None] = mapped_column(Text, nullable=True)
+    oil_commodities: Mapped[str | None] = mapped_column(Text, nullable=True)
+    bolsas: Mapped[str | None] = mapped_column(Text, nullable=True)
+    juros_dm: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pricing_dm: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dxy_dmfx: Mapped[str | None] = mapped_column(Text, nullable=True)
+    moedas_em: Mapped[str | None] = mapped_column(Text, nullable=True)
+    brl_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rates_em: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pricing_em: Mapped[str | None] = mapped_column(Text, nullable=True)
+    meu_book: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pnl_por_classe: Mapped[str | None] = mapped_column(Text, nullable=True)
+    posicoes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    espero_amanha: Mapped[str | None] = mapped_column(Text, nullable=True)
+    vol_total_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    vol_total_brl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risco_portfolio: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
-    user: Mapped["User"] = relationship(back_populates="market_notes")
-
-
-class JournalEntry(Base):
-    __tablename__ = "journal_entries"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-
-    date: Mapped[datetime.datetime] = mapped_column(DateTime)
-    mood: Mapped[str | None] = mapped_column(String(32), nullable=True)  # ex: confiante, ansioso, disciplinado
-    discipline_score: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-5
-    content: Mapped[str] = mapped_column(Text)
-
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow)
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
-
-    user: Mapped["User"] = relationship(back_populates="journal_entries")
+    user: Mapped["User"] = relationship(back_populates="daily_notes")
 
 
 class RiskSettings(Base):

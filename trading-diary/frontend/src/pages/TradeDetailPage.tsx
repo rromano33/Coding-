@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { tradesApi } from "../api/endpoints";
 import type { Trade } from "../types";
 import { formatCurrency, formatDateTime, formatNumber, pnlColor } from "../utils/format";
-import { MARKETS } from "../types";
+import { MARKETS, RISK_CLASSES } from "../types";
 
 export default function TradeDetailPage() {
   const { id } = useParams();
@@ -42,6 +42,8 @@ export default function TradeDetailPage() {
   if (!trade) return <p className="text-slate-500 text-sm">Carregando...</p>;
 
   const marketLabel = MARKETS.find((m) => m.value === trade.market)?.label ?? trade.market;
+  const riskClassLabel = RISK_CLASSES.find((c) => c.value === trade.risk_class)?.label ?? null;
+  const isForeignCurrency = Boolean(trade.currency && trade.currency.trim().toUpperCase() !== "BRL");
 
   return (
     <div>
@@ -126,6 +128,22 @@ export default function TradeDetailPage() {
         <Row label="Stop" value={trade.stop_price !== null ? formatNumber(trade.stop_price) : "—"} />
         <Row label="Alvo" value={trade.target_price !== null ? formatNumber(trade.target_price) : "—"} />
         <Row label="Taxas" value={formatCurrency(trade.fees)} />
+        {isForeignCurrency && (
+          <>
+            <Row label="Moeda" value={trade.currency!} />
+            <Row
+              label="Taxa de conversão pra R$"
+              value={trade.fx_rate_to_brl !== null ? formatNumber(trade.fx_rate_to_brl) : "—"}
+            />
+          </>
+        )}
+        {trade.contract_multiplier !== 1 && (
+          <Row label="Multiplicador" value={formatNumber(trade.contract_multiplier)} />
+        )}
+        {trade.manual_adjustment !== 0 && (
+          <Row label="Ajuste manual" value={formatCurrency(trade.manual_adjustment)} />
+        )}
+        <Row label="Classe de risco" value={riskClassLabel ?? "—"} />
         <Row label="Estratégia" value={trade.strategy || "—"} />
         <Row label="Convicção" value={trade.conviction || "—"} />
         <Row label="Tags" value={trade.tags || "—"} />

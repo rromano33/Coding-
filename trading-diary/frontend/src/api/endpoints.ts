@@ -3,13 +3,12 @@ import type {
   BreakdownItem,
   ConvictionTier,
   ConvictionTierInput,
+  DailyNote,
+  DailyNoteInput,
+  DailyNotePrefill,
   DrawdownPhase,
   DrawdownPhaseInput,
   EquityCurvePoint,
-  JournalEntry,
-  JournalEntryInput,
-  MarketNote,
-  MarketNoteInput,
   PerformanceSummary,
   RiskSettings,
   RiskSettingsInput,
@@ -50,18 +49,13 @@ export const tradesApi = {
   remove: (id: number) => api.delete<void>(`/trades/${id}`),
 };
 
-export const marketNotesApi = {
-  list: () => api.get<MarketNote[]>("/market-notes"),
-  create: (payload: MarketNoteInput) => api.post<MarketNote>("/market-notes", payload),
-  update: (id: number, payload: Partial<MarketNoteInput>) => api.put<MarketNote>(`/market-notes/${id}`, payload),
-  remove: (id: number) => api.delete<void>(`/market-notes/${id}`),
-};
-
-export const journalApi = {
-  list: () => api.get<JournalEntry[]>("/journal"),
-  create: (payload: JournalEntryInput) => api.post<JournalEntry>("/journal", payload),
-  update: (id: number, payload: Partial<JournalEntryInput>) => api.put<JournalEntry>(`/journal/${id}`, payload),
-  remove: (id: number) => api.delete<void>(`/journal/${id}`),
+export const dailyNotesApi = {
+  list: () => api.get<DailyNote[]>("/daily-notes"),
+  get: (id: number) => api.get<DailyNote>(`/daily-notes/${id}`),
+  prefill: (date: string) => api.get<DailyNotePrefill>(`/daily-notes/prefill?date=${date}`),
+  create: (payload: DailyNoteInput) => api.post<DailyNote>("/daily-notes", payload),
+  update: (id: number, payload: Partial<DailyNoteInput>) => api.put<DailyNote>(`/daily-notes/${id}`, payload),
+  remove: (id: number) => api.delete<void>(`/daily-notes/${id}`),
 };
 
 export const statsApi = {

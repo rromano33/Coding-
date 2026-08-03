@@ -52,6 +52,11 @@ class TradeBase(BaseModel):
     emotions: str | None = None
     conviction: str | None = None  # baixa | media | alta | extrema
     vol_diaria_pct: float | None = None  # vol diária estimada do ativo, ex: 0.02 = 2%
+    currency: str | None = None  # ex: BRL, USD, JPY; vazio = BRL
+    fx_rate_to_brl: float | None = None
+    contract_multiplier: float = 1.0
+    risk_class: str | None = None  # rates | fx | equities | other
+    manual_adjustment: float = 0.0  # ajuste manual em R$ (scaling intraday)
 
 
 class TradeCreate(TradeBase):
@@ -78,6 +83,11 @@ class TradeUpdate(BaseModel):
     emotions: str | None = None
     conviction: str | None = None
     vol_diaria_pct: float | None = None
+    currency: str | None = None
+    fx_rate_to_brl: float | None = None
+    contract_multiplier: float | None = None
+    risk_class: str | None = None
+    manual_adjustment: float | None = None
 
 
 class TradePriceUpdate(BaseModel):
@@ -98,27 +108,57 @@ class TradeRead(TradeBase):
     updated_at: datetime.datetime
 
 
-# ---- Market note ----
+# ---- Daily note (diário macro) ----
 
-class MarketNoteBase(BaseModel):
+class DailyNoteBase(BaseModel):
     date: datetime.datetime
-    title: str
-    content: str
-    tags: str | None = None
+    ontem: str | None = None
+    comentario_geral: str | None = None
+    oil_commodities: str | None = None
+    bolsas: str | None = None
+    juros_dm: str | None = None
+    pricing_dm: str | None = None
+    dxy_dmfx: str | None = None
+    moedas_em: str | None = None
+    brl_comment: str | None = None
+    rates_em: str | None = None
+    pricing_em: str | None = None
+    meu_book: str | None = None
+    pnl_por_classe: str | None = None
+    posicoes: str | None = None
+    espero_amanha: str | None = None
+    vol_total_usd: float | None = None
+    vol_total_brl: float | None = None
+    risco_portfolio: str | None = None
 
 
-class MarketNoteCreate(MarketNoteBase):
+class DailyNoteCreate(DailyNoteBase):
     pass
 
 
-class MarketNoteUpdate(BaseModel):
+class DailyNoteUpdate(BaseModel):
     date: datetime.datetime | None = None
-    title: str | None = None
-    content: str | None = None
-    tags: str | None = None
+    ontem: str | None = None
+    comentario_geral: str | None = None
+    oil_commodities: str | None = None
+    bolsas: str | None = None
+    juros_dm: str | None = None
+    pricing_dm: str | None = None
+    dxy_dmfx: str | None = None
+    moedas_em: str | None = None
+    brl_comment: str | None = None
+    rates_em: str | None = None
+    pricing_em: str | None = None
+    meu_book: str | None = None
+    pnl_por_classe: str | None = None
+    posicoes: str | None = None
+    espero_amanha: str | None = None
+    vol_total_usd: float | None = None
+    vol_total_brl: float | None = None
+    risco_portfolio: str | None = None
 
 
-class MarketNoteRead(MarketNoteBase):
+class DailyNoteRead(DailyNoteBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -126,32 +166,10 @@ class MarketNoteRead(MarketNoteBase):
     updated_at: datetime.datetime
 
 
-# ---- Journal entry ----
-
-class JournalEntryBase(BaseModel):
-    date: datetime.datetime
-    mood: str | None = None
-    discipline_score: int | None = None
-    content: str
-
-
-class JournalEntryCreate(JournalEntryBase):
-    pass
-
-
-class JournalEntryUpdate(BaseModel):
-    date: datetime.datetime | None = None
-    mood: str | None = None
-    discipline_score: int | None = None
-    content: str | None = None
-
-
-class JournalEntryRead(JournalEntryBase):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    created_at: datetime.datetime
-    updated_at: datetime.datetime
+class DailyNotePrefill(BaseModel):
+    ontem: str | None = None
+    pnl_por_classe: str | None = None
+    posicoes: str | None = None
 
 
 # ---- Stats ----

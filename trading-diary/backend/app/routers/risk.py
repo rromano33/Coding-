@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
+from app.calculations import position_risk_brl
 from app.database import get_db
 from app.models import ConvictionTier, DrawdownPhase, StopLayer, Trade, User
 from app.routers.risk_settings import get_or_create_settings
@@ -13,17 +14,11 @@ from app.schemas import ConcentrationItem, RiskAlert, RiskStatus
 router = APIRouter(prefix="/risk", tags=["risk"])
 
 
-def _position_risk(trade: Trade) -> float:
-    if trade.stop_price is None:
-        return 0.0
-    return abs(trade.entry_price - trade.stop_price) * trade.quantity
-
-
 def _concentration(open_trades: list[Trade], key_fn, limite: float) -> list[ConcentrationItem]:
     groups: dict[str, float] = defaultdict(float)
     for trade in open_trades:
         key = key_fn(trade) or "(sem categoria)"
-        groups[key] += _position_risk(trade)
+        groups[key] += position_risk_brl(trade)
     return [
         ConcentrationItem(key=key, risco_atual=risco, limite=limite, over=risco > limite)
         for key, risco in sorted(groups.items(), key=lambda kv: kv[1], reverse=True)
@@ -149,7 +144,7 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
         if t.conviction and t.stop_price is not None:
             tier = tiers.get(t.conviction)
             if tier:
-                risco_atual = _position_risk(t)
+                risco_atual = position_risk_brl(t)
                 risco_permitido = tier.pct_of_stop_anual * settings.stop_loss_anual
                 if risco_atual > risco_permitido:
                     alerts.append(
