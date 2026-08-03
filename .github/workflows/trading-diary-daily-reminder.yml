@@ -13,9 +13,12 @@ name: Trading Diary — lembrete diário
 
 on:
   schedule:
-    # 17:30 America/Sao_Paulo = 20:30 UTC (Brasil não observa horário de
-    # verão atualmente, UTC-3 fixo).
-    - cron: "30 20 * * *"
+    # Alvo: notificação chegando às 17:30 America/Sao_Paulo (UTC-3, sem
+    # horário de verão). GitHub Actions não garante execução exata de
+    # "schedule" — pode atrasar (observado: chegando depois das 18:00 com
+    # gatilho em 20:30 UTC). Gatilho antecipado em 30min (20:00 UTC) como
+    # margem de compensação; se seguir atrasando, antecipar mais.
+    - cron: "0 20 * * *"
   workflow_dispatch: {}
 
 jobs:

@@ -250,8 +250,13 @@ trading-diary/
     Actions agendado (`.github/workflows/trading-diary-daily-reminder.yml`
     — **na raiz do repo**, não em `trading-diary/`, GitHub Actions não lê
     workflow de subpasta) chama `POST /push/run-daily-reminder`
-    (protegido por header `X-Cron-Secret` == `settings.cron_secret`) às
-    17:30 BRT (20:30 UTC cron) — a própria chamada HTTP acorda o Render se
+    (protegido por header `X-Cron-Secret` == `settings.cron_secret`).
+    Alvo: notificação às 17:30 BRT. **GitHub Actions não executa
+    `schedule:` no horário exato** — observado chegando depois das 18:00
+    com cron em 20:30 UTC — então o cron está em **20:00 UTC** (17:00
+    BRT), 30min antecipado como margem de compensação. Se seguir
+    atrasando, antecipar mais (não tem garantia formal de precisão do
+    GitHub, só ajuste empírico). A própria chamada HTTP acorda o Render se
     estiver dormindo. Gatilhos `schedule:` do GitHub Actions só rodam no
     branch default do repo — **já trocado** pro `claude/trading-diary-app-azsjok`
     (era `claude/session-0asigz`). Testado via `workflow_dispatch` e

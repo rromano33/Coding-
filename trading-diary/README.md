@@ -82,10 +82,12 @@ sua máquina e acessar pelo IP dela na mesma rede Wi-Fi do celular
 ## Notificações push
 
 O app manda push notifications (stop atingido, alertas de risco, ou um
-lembrete diário se não tiver nada crítico) — um job roda 1x/dia (17:30,
-horário de Brasília). Local, esse job roda dentro do próprio processo do
-backend; em produção (Render free) é disparado de fora, por um GitHub
-Actions agendado — ver "Deploy 24/7" abaixo.
+lembrete diário se não tiver nada crítico) — um job roda 1x/dia, alvo
+17:30 horário de Brasília. Local, esse job roda dentro do próprio processo
+do backend (horário exato); em produção (Render free) é disparado de
+fora, por um GitHub Actions agendado com o cron antecipado pra compensar
+o atraso que o "schedule" do GitHub Actions costuma ter — ver "Deploy
+24/7" abaixo.
 
 Setup:
 
