@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
-from app.push_service import send_daily_reminder
+from app.push_service import send_daily_reminder, send_yesterday_result_reminder
 from app.routers import auth, daily_notes, push, risk, risk_settings, stats, trades
 
 Base.metadata.create_all(bind=engine)
@@ -19,6 +19,14 @@ def _run_daily_reminder_job() -> None:
     db = SessionLocal()
     try:
         send_daily_reminder(db)
+    finally:
+        db.close()
+
+
+def _run_morning_reminder_job() -> None:
+    db = SessionLocal()
+    try:
+        send_yesterday_result_reminder(db)
     finally:
         db.close()
 
@@ -42,6 +50,15 @@ async def lifespan(app: FastAPI):
             minute=30,
             timezone="America/Sao_Paulo",
             id="daily_reminder",
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            _run_morning_reminder_job,
+            "cron",
+            hour=9,
+            minute=0,
+            timezone="America/Sao_Paulo",
+            id="morning_reminder",
             replace_existing=True,
         )
         scheduler.start()

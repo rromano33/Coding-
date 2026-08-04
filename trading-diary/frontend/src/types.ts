@@ -104,6 +104,10 @@ export interface DailyNote {
   pricing_em: string | null;
   meu_book: string | null;
   pnl_por_classe: string | null;
+  pnl_rates: number | null;
+  pnl_fx: number | null;
+  pnl_equities: number | null;
+  pnl_other: number | null;
   posicoes: string | null;
   espero_amanha: string | null;
   vol_total_usd: number | null;
@@ -117,7 +121,6 @@ export type DailyNoteInput = Omit<DailyNote, "id" | "created_at" | "updated_at">
 
 export interface DailyNotePrefill {
   ontem: string | null;
-  pnl_por_classe: string | null;
   posicoes: string | null;
 }
 

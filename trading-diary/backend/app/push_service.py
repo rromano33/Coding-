@@ -1,3 +1,4 @@
+import datetime
 import json
 import logging
 
@@ -66,3 +67,44 @@ def send_daily_reminder(db: Session) -> None:
 
         for subscription in subscriptions:
             send_push(db, subscription, title, body)
+
+
+def send_yesterday_result_reminder(db: Session) -> None:
+    """Roda 1x/dia de manhã: lembra de lançar o resultado oficial de ontem no Diário.
+
+    Esse resultado (Rates/FX/Equities/Other) é a única fonte que alimenta o
+    risco (stops/drawdown/YTD) — sem ele, o dia fica de fora da conta.
+    """
+    from app.models import DailyNote  # import tardio: evita ciclo de import no startup
+
+    user_ids = {row[0] for row in db.query(PushSubscription.user_id).distinct().all()}
+    if not user_ids:
+        return
+
+    yesterday = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).date()
+
+    for user_id in user_ids:
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            continue
+
+        subscriptions = db.query(PushSubscription).filter(PushSubscription.user_id == user_id).all()
+        if not subscriptions:
+            continue
+
+        note = (
+            db.query(DailyNote)
+            .filter(DailyNote.user_id == user_id, DailyNote.date >= datetime.datetime.combine(yesterday, datetime.time.min))
+            .filter(DailyNote.date <= datetime.datetime.combine(yesterday, datetime.time.max))
+            .first()
+        )
+        already_filled = note is not None and any(
+            v is not None for v in (note.pnl_rates, note.pnl_fx, note.pnl_equities, note.pnl_other)
+        )
+        if already_filled:
+            continue
+
+        title = "Resultado oficial de ontem"
+        body = f"Lança o resultado de {yesterday.strftime('%d/%m')} por classe (Rates/FX/Equities/Other) pra manter o risco atualizado."
+        for subscription in subscriptions:
+            send_push(db, subscription, title, body, url="/diario")

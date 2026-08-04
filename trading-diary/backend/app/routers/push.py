@@ -5,7 +5,7 @@ from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.models import PushSubscription, User
-from app.push_service import send_daily_reminder, send_push
+from app.push_service import send_daily_reminder, send_push, send_yesterday_result_reminder
 from app.schemas import PushSubscriptionCreate, PushSubscriptionRemove, VapidPublicKey
 
 router = APIRouter(prefix="/push", tags=["push"])
@@ -75,3 +75,15 @@ def run_daily_reminder(
     if x_cron_secret != settings.cron_secret:
         raise HTTPException(http_status.HTTP_401_UNAUTHORIZED, "Cron secret inválido")
     send_daily_reminder(db)
+
+
+@router.post("/run-morning-reminder", status_code=http_status.HTTP_204_NO_CONTENT)
+def run_morning_reminder(
+    db: Session = Depends(get_db), x_cron_secret: str | None = Header(default=None)
+):
+    """Gatilho externo pro lembrete matinal (~9h) de lançar o resultado oficial de ontem."""
+    if not settings.cron_secret:
+        raise HTTPException(http_status.HTTP_503_SERVICE_UNAVAILABLE, "CRON_SECRET não configurado no backend")
+    if x_cron_secret != settings.cron_secret:
+        raise HTTPException(http_status.HTTP_401_UNAUTHORIZED, "Cron secret inválido")
+    send_yesterday_result_reminder(db)

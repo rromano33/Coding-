@@ -1,10 +1,18 @@
-name: Trading Diary — lembrete diário
+name: Trading Diary — lembretes diários
 
-# Gatilho externo do push diário do Diário de Trades. Existe porque o
-# backend roda no plano free do Render, que hiberna após inatividade — o
-# scheduler in-process (APScheduler) do backend fica desligado em produção
-# (ENABLE_INTERNAL_SCHEDULER=false) e essa chamada HTTP é quem acorda o
-# serviço e dispara o lembrete de verdade. Ver trading-diary/CLAUDE.md.
+# Gatilhos externos dos pushes do Diário de Trades. Existem porque o backend
+# roda no plano free do Render, que hiberna após inatividade — o scheduler
+# in-process (APScheduler) do backend fica desligado em produção
+# (ENABLE_INTERNAL_SCHEDULER=false) e essas chamadas HTTP são quem acordam o
+# serviço e disparam os lembretes de verdade. Ver trading-diary/CLAUDE.md.
+#
+# Dois lembretes, dois horários-alvo:
+# - ~17:30 America/Sao_Paulo: resumo de risco / diário de fim de dia
+#   (endpoint run-daily-reminder).
+# - ~09:00 America/Sao_Paulo: lembrete pra lançar o resultado oficial de
+#   ontem por classe (Rates/FX/Equities/Other) — é esse número que alimenta
+#   stops/drawdown/YTD no motor de risco, não os trades individuais
+#   (endpoint run-morning-reminder).
 #
 # Importante: gatilhos "schedule" do GitHub Actions só rodam no branch
 # default do repositório — confirme que este workflow está no branch
@@ -13,21 +21,42 @@ name: Trading Diary — lembrete diário
 
 on:
   schedule:
-    # Alvo: notificação chegando às 17:30 America/Sao_Paulo (UTC-3, sem
-    # horário de verão). GitHub Actions não garante execução exata de
-    # "schedule" — pode atrasar (observado: chegando depois das 18:00 com
-    # gatilho em 20:30 UTC). Gatilho antecipado em 30min (20:00 UTC) como
-    # margem de compensação; se seguir atrasando, antecipar mais.
+    # Alvo: 17:30 America/Sao_Paulo (UTC-3, sem horário de verão) => 20:30 UTC.
+    # GitHub Actions não garante execução exata de "schedule" — pode atrasar
+    # (observado: chegando depois das 18:00 com gatilho em 20:30 UTC).
+    # Gatilho antecipado em 30min (20:00 UTC) como margem de compensação; se
+    # seguir atrasando, antecipar mais.
     - cron: "0 20 * * *"
-  workflow_dispatch: {}
+    # Alvo: 09:00 America/Sao_Paulo => 12:00 UTC. Mesma margem de 30min.
+    - cron: "30 11 * * *"
+  workflow_dispatch:
+    inputs:
+      lembrete:
+        description: "Qual lembrete disparar manualmente"
+        type: choice
+        options:
+          - fim-de-dia
+          - manha
+        default: fim-de-dia
 
 jobs:
   trigger-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: Chama o endpoint de lembrete diário
+      - name: Decide qual endpoint chamar
+        id: pick
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+          LEMBRETE_MANUAL: ${{ github.event.inputs.lembrete }}
+        run: |
+          if [ "$SCHEDULE" = "30 11 * * *" ] || [ "$LEMBRETE_MANUAL" = "manha" ]; then
+            echo "path=run-morning-reminder" >> "$GITHUB_OUTPUT"
+          else
+            echo "path=run-daily-reminder" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Chama o endpoint de lembrete
         run: |
           curl --fail --silent --show-error \
             -X POST \
             -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}" \
-            "${{ secrets.BACKEND_URL }}/push/run-daily-reminder"
+            "${{ secrets.BACKEND_URL }}/push/${{ steps.pick.outputs.path }}"

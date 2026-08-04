@@ -81,13 +81,20 @@ sua máquina e acessar pelo IP dela na mesma rede Wi-Fi do celular
 
 ## Notificações push
 
-O app manda push notifications (stop atingido, alertas de risco, ou um
-lembrete diário se não tiver nada crítico) — um job roda 1x/dia, alvo
-17:30 horário de Brasília. Local, esse job roda dentro do próprio processo
-do backend (horário exato); em produção (Render free) é disparado de
-fora, por um GitHub Actions agendado com o cron antecipado pra compensar
-o atraso que o "schedule" do GitHub Actions costuma ter — ver "Deploy
-24/7" abaixo.
+O app manda dois pushes por dia:
+
+- **~17:30 BRT**: stop atingido, alertas de risco, ou um lembrete diário
+  se não tiver nada crítico — é o momento de comentar o dia no Diário.
+- **~09:00 BRT**: lembrete pra lançar o resultado oficial de **ontem**
+  por classe (Rates/FX/Equities/Other) no Diário. Esse número é a única
+  fonte que alimenta o motor de risco (stop diário/mensal/anual,
+  drawdown, YTD) — trades individuais no app servem só de apoio (cálculo
+  de PnL/R, sugestão de tamanho de posição), não entram nessa conta.
+
+Local, os dois jobs rodam dentro do próprio processo do backend (horário
+exato); em produção (Render free) são disparados de fora, por um GitHub
+Actions agendado com os crons antecipados pra compensar o atraso que o
+"schedule" do GitHub Actions costuma ter — ver "Deploy 24/7" abaixo.
 
 Setup:
 
@@ -148,11 +155,13 @@ a primeira requisição depois de dormir demora alguns segundos (cold
 start). Sem disco persistente no free tier, por isso o Turso: ele é quem
 guarda os dados de verdade, não o disco do Render.
 
-O job de push diário (17:30 BRT) não pode depender do processo do backend
-estar acordado nesse horário — por isso ele é disparado de fora, por um
-GitHub Actions agendado (`.github/workflows/trading-diary-daily-reminder.yml`
-na raiz do repo) que chama `POST /push/run-daily-reminder`; a própria
-chamada HTTP acorda o Render se estiver dormindo.
+Os jobs de push diário (17:30 e 09:00 BRT) não podem depender do processo
+do backend estar acordado nesses horários — por isso são disparados de
+fora, por um único GitHub Actions agendado com dois `cron:`
+(`.github/workflows/trading-diary-daily-reminder.yml` na raiz do repo)
+que chama `POST /push/run-daily-reminder` ou `POST
+/push/run-morning-reminder` dependendo de qual `schedule` disparou; a
+própria chamada HTTP acorda o Render se estiver dormindo.
 
 ### 1. Banco → Turso
 
@@ -225,8 +234,8 @@ de navegador — sem isso, atualizar a página numa rota tipo `/trades/5` dá
    (ou troque o default nas configurações do repo) — senão o cron nunca
    dispara sozinho.
 3. Pra testar sem esperar o horário: aba **Actions** do GitHub → o
-   workflow "Trading Diary — lembrete diário" → **Run workflow**
-   (`workflow_dispatch`).
+   workflow "Trading Diary — lembretes diários" → **Run workflow**
+   (`workflow_dispatch`), escolhendo "fim-de-dia" ou "manha".
 
 ### 5. Backup local no Mac (opcional, recomendado)
 

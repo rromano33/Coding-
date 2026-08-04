@@ -99,16 +99,20 @@ trading-diary/
 - **Diário** (`DailyNote`, substitui os antigos `MarketNote`/`JournalEntry`):
   segue a estrutura real do diário macro diário do usuário (Ontem,
   Comentário geral, Oil/Commodities, Bolsas, Juros DM, Pricing DM, DXY/
-  DMFX, Moedas EM, BRL, Rates EM, Pricing EM, Meu book, P&L por classe,
+  DMFX, Moedas EM, BRL, Rates EM, Pricing EM, Meu book, **resultado
+  oficial do dia por classe** (`pnl_rates`/`pnl_fx`/`pnl_equities`/
+  `pnl_other`, floats nullable — ver "Risco é top-down" abaixo),
   Posições, O que espero de amanhã, Vol total USD/BRL, Risco de
   portfólio). CRUD simples (`routers/daily_notes.py`), mais
   `GET /daily-notes/prefill?date=` que **só sugere** valores iniciais
   (não é dashboard ao vivo): "Ontem" vem do `espero_amanha` do registro
-  anterior, "P&L por classe" soma `Trade.pnl` dos trades fechados no dia
-  agrupados por `risk_class`, "Posições" lista os trades `status=="open"`
-  no momento — tudo isso vira texto editável no form, o registro salvo é
-  sempre o texto final (congelado), preservando anotações manuais tipo
-  "-> BRL90k de prêmio" que não existem no modelo de `Trade`.
+  anterior, "Posições" lista os trades `status=="open"` no momento —
+  isso vira texto editável no form, o registro salvo é sempre o texto
+  final (congelado). O resultado por classe é **sempre digitado à mão**
+  (não tem prefill a partir de trades — decisão deliberada, ver abaixo).
+  `pnl_por_classe` (texto) continua existindo só como string de exibição
+  gerada no frontend a partir dos 4 campos numéricos antes de salvar —
+  não é mais fonte de nada, é só pra manter o histórico legível na lista.
   `pricing_dm`/`pricing_em`/`vol_total_*`/`risco_portfolio` continuam
   texto livre ou manual — estruturar isso (por banco central, por
   metodologia de VaR) é escopo grande, não fiz agora.
@@ -137,6 +141,18 @@ trading-diary/
     limites, e alertas por posição (proximidade/rompimento de stop
     individual, risco acima do permitido pra convicção). Alertas de
     posição carregam `trade_id` pra a UI linkar direto ao trade.
+  - **Risco é top-down, não vem de trades** (decisão deliberada do
+    usuário, 2026-08-04): PnL hoje/mês/ano e a curva de drawdown vêm de
+    `risk.py::_daily_official_pnl`, que soma `DailyNote.pnl_rates` +
+    `pnl_fx` + `pnl_equities` + `pnl_other` por dia (um dia só entra na
+    conta se pelo menos uma classe foi preenchida). `Trade.pnl` **não**
+    entra nessa soma — trades no app servem só de apoio (calcular PnL/R
+    individual, sugerir tamanho de posição), o usuário lança o resultado
+    oficial do book separadamente todo dia (via push das ~9h, ver
+    "Push notifications" abaixo) e é isso que baliza stop/drawdown/YTD.
+    Concentração de risco por tese/classe e alertas de stop individual
+    continuam vindo de trades **abertos** (isso é exposição atual, não
+    PnL realizado — não muda com essa decisão).
 - **Sizing sugerido** no form de trade: duas sugestões lado a lado —
   por distância ao stop (`risco_maximo / |entry - stop|`) e por
   volatilidade do ativo (`risco_maximo / (entry_price × vol_diaria_pct)`,
@@ -147,21 +163,36 @@ trading-diary/
   aplicada em `risk.py::_position_risk` → `calculations.position_risk_brl`
   (usado no sizing sugerido *e* na concentração de risco por
   tese/classe em `GET /risk/status`).
-- **Push notifications (web push)**:
+- **Push notifications (web push)**: dois lembretes diários, horários e
+  propósitos diferentes — não reabrir sem pedido novo.
   - `PushSubscription` (modelo novo): `endpoint`/`p256dh`/`auth` por usuário,
     N por usuário (um por dispositivo/navegador instalado).
-  - `app/push_service.py`: `send_push` (pywebpush + VAPID, remove a
-    subscription do banco se o endpoint responder 404/410) e
-    `send_daily_reminder` (varre usuários com subscription ativa, calcula
-    `risk/status` de cada um e manda push — prioriza stop > alerta > lembrete
-    genérico de trades abertos).
+  - `app/push_service.py`:
+    - `send_push` (pywebpush + VAPID, remove a subscription do banco se o
+      endpoint responder 404/410).
+    - `send_daily_reminder` (~17:30): varre usuários com subscription
+      ativa, calcula `risk/status` de cada um e manda push — prioriza
+      stop > alerta > lembrete genérico de trades abertos. É o momento
+      de comentar o dia (diário de fim de dia).
+    - `send_yesterday_result_reminder` (~09:00): lembra de lançar o
+      resultado oficial de ontem por classe no Diário
+      (`pnl_rates`/`pnl_fx`/`pnl_equities`/`pnl_other`) — pula o usuário
+      se esse dia já tiver alguma classe preenchida. Esse número é a
+      única fonte do motor de risco (ver "Risco é top-down" acima), então
+      esse push é estrutural, não cosmético: sem ele (ou sem o usuário
+      responder), o dia fica de fora do drawdown/YTD.
   - `app/routers/push.py`: `GET /push/public-key`, `POST /push/subscribe`,
-    `POST /push/unsubscribe`, `POST /push/test`.
-  - Job diário agendado via APScheduler (`BackgroundScheduler`, cron
-    17:30 `America/Sao_Paulo` todo dia — horário e timezone explícitos,
-    decisão do usuário, não reabrir sem pedido novo) registrado no
-    `lifespan` do `main.py` — roda em thread própria dentro do próprio
-    processo do backend (não é um worker separado).
+    `POST /push/unsubscribe`, `POST /push/test`, `POST
+    /push/run-daily-reminder` (fim de dia), `POST /push/run-morning-reminder`
+    (resultado oficial de ontem) — ambos protegidos por `X-Cron-Secret`.
+  - Dois jobs via APScheduler (`BackgroundScheduler`) registrados no
+    `lifespan` do `main.py`: `daily_reminder` (17:30) e `morning_reminder`
+    (09:00), ambos `America/Sao_Paulo` — rodam em thread própria dentro do
+    próprio processo do backend (não é um worker separado). Em produção
+    (Render free) esse scheduler in-process fica desligado
+    (`ENABLE_INTERNAL_SCHEDULER=false`) e o gatilho real é o GitHub
+    Actions (ver "Deploy 24/7" no README) batendo nos dois endpoints em
+    horários compensados.
   - Chaves VAPID em `.env` (`VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/
     `VAPID_CLAIM_EMAIL`), geradas com
     `backend/scripts/generate_vapid_keys.py`. **Nunca commitar as chaves

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.calculations import position_risk_brl
 from app.database import get_db
-from app.models import ConvictionTier, DrawdownPhase, StopLayer, Trade, User
+from app.models import ConvictionTier, DailyNote, DrawdownPhase, StopLayer, Trade, User
 from app.routers.risk_settings import get_or_create_settings
 from app.schemas import ConcentrationItem, RiskAlert, RiskStatus
 
@@ -23,6 +23,24 @@ def _concentration(open_trades: list[Trade], key_fn, limite: float) -> list[Conc
         ConcentrationItem(key=key, risco_atual=risco, limite=limite, over=risco > limite)
         for key, risco in sorted(groups.items(), key=lambda kv: kv[1], reverse=True)
     ]
+
+
+def _daily_official_pnl(db: Session, user_id: int) -> list[tuple[datetime.date, float]]:
+    """PnL oficial por dia, fonte única de verdade pro risco (stops/drawdown/YTD).
+
+    Vem do resultado top-down lançado no Diário (Rates/FX/Equities/Other), não de
+    trades individuais — o usuário decidiu que trades no app servem só pra apoio
+    (cálculo de PnL individual, sizing de posição), não pra contabilidade de risco.
+    Um dia só entra na conta se pelo menos uma classe tiver sido preenchida.
+    """
+    notes = db.query(DailyNote).filter(DailyNote.user_id == user_id).all()
+    daily: dict[datetime.date, float] = {}
+    for note in notes:
+        classes = [note.pnl_rates, note.pnl_fx, note.pnl_equities, note.pnl_other]
+        if all(c is None for c in classes):
+            continue
+        daily[note.date.date()] = sum(c or 0.0 for c in classes)
+    return sorted(daily.items())
 
 
 @router.get("/status", response_model=RiskStatus)
@@ -41,23 +59,21 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
 
     all_trades = db.query(Trade).filter(Trade.user_id == current_user.id).all()
     open_trades = [t for t in all_trades if t.status == "open"]
-    closed = sorted(
-        (t for t in all_trades if t.status == "closed" and t.exit_date is not None and t.pnl is not None),
-        key=lambda t: t.exit_date,
-    )
 
     now = datetime.datetime.utcnow()
     today = now.date()
 
-    pnl_today = sum(t.pnl for t in closed if t.exit_date.date() == today)
-    pnl_month = sum(t.pnl for t in closed if (t.exit_date.year, t.exit_date.month) == (today.year, today.month))
-    year_trades = [t for t in closed if t.exit_date.year == today.year]
-    pnl_year = sum(t.pnl for t in year_trades)
+    daily_pnl = _daily_official_pnl(db, current_user.id)
+
+    pnl_today = sum(v for d, v in daily_pnl if d == today)
+    pnl_month = sum(v for d, v in daily_pnl if (d.year, d.month) == (today.year, today.month))
+    year_days = [(d, v) for d, v in daily_pnl if d.year == today.year]
+    pnl_year = sum(v for _, v in year_days)
 
     cumulative = 0.0
     peak = 0.0
-    for t in year_trades:
-        cumulative += t.pnl
+    for _, v in year_days:
+        cumulative += v
         peak = max(peak, cumulative)
     drawdown_atual = max(0.0, peak - cumulative)
 

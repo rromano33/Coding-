@@ -125,6 +125,10 @@ class DailyNoteBase(BaseModel):
     pricing_em: str | None = None
     meu_book: str | None = None
     pnl_por_classe: str | None = None
+    pnl_rates: float | None = None
+    pnl_fx: float | None = None
+    pnl_equities: float | None = None
+    pnl_other: float | None = None
     posicoes: str | None = None
     espero_amanha: str | None = None
     vol_total_usd: float | None = None
@@ -151,6 +155,10 @@ class DailyNoteUpdate(BaseModel):
     pricing_em: str | None = None
     meu_book: str | None = None
     pnl_por_classe: str | None = None
+    pnl_rates: float | None = None
+    pnl_fx: float | None = None
+    pnl_equities: float | None = None
+    pnl_other: float | None = None
     posicoes: str | None = None
     espero_amanha: str | None = None
     vol_total_usd: float | None = None
@@ -168,7 +176,6 @@ class DailyNoteRead(DailyNoteBase):
 
 class DailyNotePrefill(BaseModel):
     ontem: str | None = None
-    pnl_por_classe: str | None = None
     posicoes: str | None = None
 
 

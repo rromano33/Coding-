@@ -18,6 +18,10 @@ const EMPTY: DailyNoteInput = {
   pricing_em: "",
   meu_book: "",
   pnl_por_classe: "",
+  pnl_rates: null,
+  pnl_fx: null,
+  pnl_equities: null,
+  pnl_other: null,
   posicoes: "",
   espero_amanha: "",
   vol_total_usd: null,
@@ -25,7 +29,7 @@ const EMPTY: DailyNoteInput = {
   risco_portfolio: "",
 };
 
-const SECTIONS: { key: keyof DailyNoteInput; label: string; rows?: number }[] = [
+const SECTIONS_TOP: { key: keyof DailyNoteInput; label: string; rows?: number }[] = [
   { key: "ontem", label: "Ontem", rows: 2 },
   { key: "comentario_geral", label: "Comentário geral", rows: 3 },
   { key: "oil_commodities", label: "Oil/Commodities", rows: 2 },
@@ -38,11 +42,45 @@ const SECTIONS: { key: keyof DailyNoteInput; label: string; rows?: number }[] = 
   { key: "rates_em", label: "Rates EM", rows: 2 },
   { key: "pricing_em", label: "Pricing EM", rows: 2 },
   { key: "meu_book", label: "Meu book (resultado e comentário)", rows: 3 },
-  { key: "pnl_por_classe", label: "P&L por classe", rows: 2 },
+];
+
+const SECTIONS_BOTTOM: { key: keyof DailyNoteInput; label: string; rows?: number }[] = [
   { key: "posicoes", label: "Posições", rows: 3 },
   { key: "espero_amanha", label: "O que espero de amanhã", rows: 2 },
   { key: "risco_portfolio", label: "Risco de portfólio (opcional)", rows: 2 },
 ];
+
+const PNL_CLASSES: { key: "pnl_rates" | "pnl_fx" | "pnl_equities" | "pnl_other"; label: string }[] = [
+  { key: "pnl_rates", label: "Rates" },
+  { key: "pnl_fx", label: "FX" },
+  { key: "pnl_equities", label: "Equities" },
+  { key: "pnl_other", label: "Other" },
+];
+
+function formatBrl(value: number): string {
+  const s = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return s.replace(/,/g, "_").replace(/\./g, ",").replace(/_/g, ".");
+}
+
+function noteTotal(note: DailyNote): number | null {
+  const values = [note.pnl_rates, note.pnl_fx, note.pnl_equities, note.pnl_other];
+  if (values.every((v) => v === null)) return null;
+  return values.reduce((sum: number, v) => sum + (v ?? 0), 0);
+}
+
+function buildPnlPorClasseText(form: DailyNoteInput): string {
+  const parts: string[] = [];
+  let total = 0;
+  for (const { key, label } of PNL_CLASSES) {
+    const value = form[key];
+    if (value !== null && value !== undefined) {
+      parts.push(`${label.toUpperCase()}: R$ ${formatBrl(value)}`);
+      total += value;
+    }
+  }
+  if (parts.length === 0) return "";
+  return `Total: R$ ${formatBrl(total)} | ${parts.join(" | ")}`;
+}
 
 export default function DailyNotePage() {
   const [notes, setNotes] = useState<DailyNote[]>([]);
@@ -78,7 +116,6 @@ export default function DailyNotePage() {
         ...EMPTY,
         date: today,
         ontem: prefill.ontem ?? "",
-        pnl_por_classe: prefill.pnl_por_classe ?? "",
         posicoes: prefill.posicoes ?? "",
       });
       setShowForm(true);
@@ -97,7 +134,11 @@ export default function DailyNotePage() {
     e.preventDefault();
     setSaving(true);
     try {
-      const payload = { ...form, date: new Date(form.date).toISOString() };
+      const payload = {
+        ...form,
+        date: new Date(form.date).toISOString(),
+        pnl_por_classe: buildPnlPorClasseText(form) || null,
+      };
       if (editingId) {
         await dailyNotesApi.update(editingId, payload);
       } else {
@@ -156,7 +197,36 @@ export default function DailyNotePage() {
             />
           </div>
 
-          {SECTIONS.map((s) => (
+          {SECTIONS_TOP.map((s) => (
+            <div key={s.key}>
+              <label>{s.label}</label>
+              <textarea rows={s.rows ?? 2} {...field(s.key)} />
+            </div>
+          ))}
+
+          <div>
+            <label>Resultado oficial do dia (R$) — alimenta o risco</label>
+            <div className="grid grid-cols-2 gap-3">
+              {PNL_CLASSES.map(({ key, label }) => (
+                <div key={key}>
+                  <label className="text-xs text-slate-500">{label}</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={form[key] ?? ""}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, [key]: e.target.value === "" ? null : Number(e.target.value) }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Total: R$ {formatBrl(PNL_CLASSES.reduce((sum, { key }) => sum + (form[key] ?? 0), 0))}
+            </p>
+          </div>
+
+          {SECTIONS_BOTTOM.map((s) => (
             <div key={s.key}>
               <label>{s.label}</label>
               <textarea rows={s.rows ?? 2} {...field(s.key)} />
@@ -209,7 +279,15 @@ export default function DailyNotePage() {
           <div key={note.id} className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="font-medium text-slate-100">{formatDate(note.date)}</p>
+                <p className="font-medium text-slate-100">
+                  {formatDate(note.date)}
+                  {noteTotal(note) !== null && (
+                    <span className={noteTotal(note)! >= 0 ? "text-green-400" : "text-red-400"}>
+                      {" "}
+                      · R$ {formatBrl(noteTotal(note)!)}
+                    </span>
+                  )}
+                </p>
                 {note.comentario_geral && (
                   <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{note.comentario_geral}</p>
                 )}
