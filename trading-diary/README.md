@@ -151,9 +151,20 @@ SQLite-compatível hospedado, tier free permanente, sem cartão) + frontend
 no Vercel (Hobby, grátis). Custo total: **US$0**.
 
 O tradeoff de ser grátis: o Render free hiberna após ~15min sem tráfego —
-a primeira requisição depois de dormir demora alguns segundos (cold
-start). Sem disco persistente no free tier, por isso o Turso: ele é quem
-guarda os dados de verdade, não o disco do Render.
+a primeira requisição depois de dormir paga o cold start inteiro
+(medido em produção: ~30s+, não "alguns segundos" — na prática, telas
+demorando dezenas de segundos ou minutos). Sem disco persistente no free
+tier, por isso o Turso: ele é quem guarda os dados de verdade, não o
+disco do Render.
+
+Pra evitar esse cold start sem pagar nada, tem um terceiro workflow
+(`.github/workflows/trading-diary-keep-alive.yml`) que faz `GET /health`
+a cada ~10min — mantém o Render sempre acordado, cabendo dentro das
+750h/mês grátis do plano (um serviço rodando 24/7 já usa exatamente essa
+cota). Não é 100% garantido pela Render, mas na prática elimina o cold
+start quase sempre. Se ainda notar lentidão apesar disso, a saída
+definitiva é o plano Starter pago (~US$7/mês) — sem hibernação e com
+CPU/RAM dedicados.
 
 Os jobs de push diário (17:30 e 09:00 BRT) não podem depender do processo
 do backend estar acordado nesses horários — por isso são disparados de
@@ -236,6 +247,13 @@ de navegador — sem isso, atualizar a página numa rota tipo `/trades/5` dá
 3. Pra testar sem esperar o horário: aba **Actions** do GitHub → o
    workflow "Trading Diary — lembretes diários" → **Run workflow**
    (`workflow_dispatch`), escolhendo "fim-de-dia" ou "manha".
+
+### 5. Keep-alive → GitHub Actions
+
+Reusa os mesmos secrets do passo 4 (`BACKEND_URL`). Não precisa configurar
+nada além disso — o workflow `trading-diary-keep-alive.yml` já faz `GET
+/health` a cada ~10min sozinho, desde que esteja no branch default (mesma
+observação do passo 4.2 sobre `schedule:`).
 
 ### 5. Backup local no Mac (opcional, recomendado)
 

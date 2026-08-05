@@ -1,0 +1,26 @@
+name: Trading Diary — keep-alive
+
+# O backend roda no plano free do Render, que hiberna o container depois de
+# ~15min sem tráfego — a primeira requisição depois disso paga o cold start
+# inteiro (Render acordando o processo do zero + primeira conexão nova ao
+# Turso), o que na prática significa telas demorando dezenas de segundos ou
+# minutos pra carregar. Esse ping simples a cada 10min mantém o serviço
+# sempre acordado, sem custo (cabe dentro das 750h/mês grátis do plano —
+# um serviço rodando 24/7 já usa exatamente essa cota). Ver trading-diary/CLAUDE.md.
+#
+# Importante: gatilhos "schedule" do GitHub Actions só rodam no branch
+# default do repositório.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            "${{ secrets.BACKEND_URL }}/health"

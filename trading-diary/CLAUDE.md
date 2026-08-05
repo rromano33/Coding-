@@ -256,9 +256,20 @@ trading-diary/
 - **Deploy: Render free + Turso, não Render Starter pago + disco.**
   Superseder de uma decisão anterior — motivo novo e explícito: usuário
   não quer gastar nada com o app. Render free não tem disco persistente
-  (dado se perde a cada redeploy/restart) e hiberna após inatividade, mas
-  sem push isso deixou de importar (só usuário abrindo o app, cold start
-  de alguns segundos é aceitável). Turso (SQLite-compatível hospedado,
+  (dado se perde a cada redeploy/restart) e hiberna após inatividade —
+  **medido em produção (2026-08-05): cold start real de ~30s+ na primeira
+  requisição depois de dormir**, não "alguns segundos" como se assumiu
+  originalmente aqui (afetava tanto abertura do app quanto troca de tela,
+  já que o usuário costuma levar mais que a janela de inatividade do
+  Render lendo cada tela). Isolado com um probe direto no driver libsql
+  (sem picos mesmo após 40s idle) — descartou bug no driver/Turso,
+  confirmando que é especificamente o Render dormindo. Mitigado sem custo
+  por `.github/workflows/trading-diary-keep-alive.yml`: `GET /health` a
+  cada ~10min, mantendo o serviço sempre acordado (cabe nas 750h/mês
+  grátis do plano — um serviço 24/7 já usa exatamente essa cota). Se
+  ainda notar lentidão apesar disso, a saída definitiva é o Starter pago
+  (~US$7/mês, sem hibernação + CPU/RAM dedicados) — usuário já foi
+  avisado, decisão dele se/quando migrar. Turso (SQLite-compatível hospedado,
   tier free permanente, sem cartão) resolve o disco: `config.py` monta
   `resolved_database_url` (`sqlite+libsql://...`) quando
   `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN` estão setados (só em produção —
