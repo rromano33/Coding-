@@ -68,6 +68,13 @@ export default function RiskStatusPage() {
         </div>
       )}
 
+      {status.postura_atual && (
+        <div className="rounded-lg px-3 py-2.5 text-sm border bg-sky-950/40 border-sky-800 text-sky-300">
+          <span className="font-medium">Postura sazonal de hoje — </span>
+          {status.postura_atual}
+        </div>
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <StatCard label="PnL hoje" value={formatCurrency(status.pnl_today)} accent={status.pnl_today >= 0 ? "green" : "red"} />
         <StatCard label="PnL mês" value={formatCurrency(status.pnl_month)} accent={status.pnl_month >= 0 ? "green" : "red"} />

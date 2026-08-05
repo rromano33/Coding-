@@ -1,4 +1,5 @@
 import datetime
+import re
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends
@@ -7,11 +8,57 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.calculations import position_risk_brl
 from app.database import get_db
-from app.models import ConvictionTier, DailyNote, DrawdownPhase, StopLayer, Trade, User
+from app.models import ConvictionTier, DailyNote, DrawdownPhase, SeasonalPosture, StopLayer, Trade, User
 from app.routers.risk_settings import get_or_create_settings
 from app.schemas import ConcentrationItem, RiskAlert, RiskStatus
 
 router = APIRouter(prefix="/risk", tags=["risk"])
+
+_MES_NUM = {
+    "jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6,
+    "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12,
+}
+
+
+def _periodo_bate(periodo: str, mes_atual: int) -> bool:
+    partes = re.split(r"[–-]", periodo.strip())
+    meses = [_MES_NUM.get(p.strip()[:3].lower()) for p in partes]
+    if any(m is None for m in meses):
+        return False
+    if len(meses) == 1:
+        return mes_atual == meses[0]
+    return meses[0] <= mes_atual <= meses[1]
+
+
+def _situacao_bate(situacao: str, pct_of_budget_year: float | None) -> bool:
+    situacao = situacao.strip().lower()
+    if situacao == "qualquer":
+        return True
+    if pct_of_budget_year is None:
+        return False
+    match = re.search(r"(abaixo|acima) de (\d+(?:\.\d+)?)\s*%", situacao)
+    if not match:
+        return False
+    direcao, valor = match.group(1), float(match.group(2)) / 100
+    return pct_of_budget_year < valor if direcao == "abaixo" else pct_of_budget_year >= valor
+
+
+def _postura_atual(db: Session, user_id: int, pct_of_budget_year: float | None) -> str | None:
+    """Postura sazonal que se aplica hoje, cruzando o mês atual com o % da meta
+    anual batido — refinamento do 'controle por drawdown' pra virar algo que o
+    app de fato avisa, não só uma tabela de referência que o usuário tem que
+    conferir manualmente."""
+    mes_atual = datetime.datetime.utcnow().month
+    posturas = (
+        db.query(SeasonalPosture)
+        .filter(SeasonalPosture.user_id == user_id)
+        .order_by(SeasonalPosture.order_index)
+        .all()
+    )
+    for p in posturas:
+        if _periodo_bate(p.periodo, mes_atual) and _situacao_bate(p.situacao_pnl, pct_of_budget_year):
+            return f"{p.periodo} · {p.situacao_pnl}: {p.postura}"
+    return None
 
 
 def _concentration(open_trades: list[Trade], key_fn, limite: float) -> list[ConcentrationItem]:
@@ -88,6 +135,9 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
         drawdown_floor_minimo = phase.floor_minimo
         max_label = f"R${phase.pnl_max / 1_000_000:.0f}M" if phase.pnl_max is not None else "+"
         phase_label = f"R${phase.pnl_min / 1_000_000:.0f}M–{max_label}"
+
+    pct_of_budget_year = (pnl_year / settings.budget_anual_pnl) if settings.budget_anual_pnl else None
+    postura_atual = _postura_atual(db, current_user.id, pct_of_budget_year)
 
     teses_abertas_set = {t.strategy for t in open_trades if t.strategy}
 
@@ -176,7 +226,7 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
         pnl_month=pnl_month,
         pnl_year=pnl_year,
         budget_anual_pnl=settings.budget_anual_pnl,
-        pct_of_budget_year=(pnl_year / settings.budget_anual_pnl) if settings.budget_anual_pnl else None,
+        pct_of_budget_year=pct_of_budget_year,
         drawdown_atual=drawdown_atual,
         drawdown_permitido=drawdown_permitido,
         drawdown_floor_minimo=drawdown_floor_minimo,
@@ -187,5 +237,6 @@ def status(db: Session = Depends(get_db), current_user: User = Depends(get_curre
         max_teses_simultaneas=settings.max_teses_simultaneas,
         concentracao_tese=concentracao_tese,
         concentracao_classe=concentracao_classe,
+        postura_atual=postura_atual,
         alerts=alerts,
     )

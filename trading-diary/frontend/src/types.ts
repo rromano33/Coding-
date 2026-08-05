@@ -253,5 +253,6 @@ export interface RiskStatus {
   max_teses_simultaneas: number;
   concentracao_tese: ConcentrationItem[];
   concentracao_classe: ConcentrationItem[];
+  postura_atual: string | null;
   alerts: RiskAlert[];
 }

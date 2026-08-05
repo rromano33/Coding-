@@ -338,6 +338,8 @@ class RiskStatus(BaseModel):
     concentracao_tese: list[ConcentrationItem]
     concentracao_classe: list[ConcentrationItem]
 
+    postura_atual: str | None
+
     alerts: list[RiskAlert]
 
 

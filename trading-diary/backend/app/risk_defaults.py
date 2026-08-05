@@ -58,7 +58,7 @@ DEFAULT_DRAWDOWN_PHASES = [
 DEFAULT_SEASONAL_POSTURES = [
     {"periodo": "Jan–Jun", "situacao_pnl": "Qualquer", "postura": "Full risk budget", "order_index": 0},
     {"periodo": "Jul–Set", "situacao_pnl": "Abaixo de 40% da meta", "postura": "Manter risco, buscar recuperação", "order_index": 1},
-    {"periodo": "Jul–Set", "situacao_pnl": "Acima de 60% da meta", "postura": "Reduz novo risco 20%, protege drawdown", "order_index": 2},
+    {"periodo": "Jul–Set", "situacao_pnl": "Acima de 80% da meta", "postura": "Reduz novo risco 20%, protege drawdown", "order_index": 2},
     {"periodo": "Out–Nov", "situacao_pnl": "Acima de 80% da meta", "postura": "Modo defensivo, só alta convicção", "order_index": 3},
     {"periodo": "Dezembro", "situacao_pnl": "Qualquer", "postura": "Gestão do aberto, sem risco novo relevante", "order_index": 4},
 ]
