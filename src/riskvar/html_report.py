@@ -718,8 +718,32 @@ _CSS = '''
   }
   .tooltip-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
   .tooltip-date { font-size: 11px; color: var(--text-muted); }
-  .table-scroll { overflow-x: auto; max-height: 340px; overflow-y: auto; }
+  /* Tabelas largas (ex: "VaR, ES e vol") ficam mais largas que a tela em
+     telas estreitas/janela redimensionada -- overflow-x:auto já deixa
+     rolar, mas sem nenhum indício visual a coluna cortada na borda parece
+     "desalinhada" em vez de "role pra ver mais". As 4 camadas de
+     background abaixo são o truque clássico de "scroll shadow": duas
+     cobrem as bordas com a cor da superfície (fixas com o conteúdo via
+     attachment:local, então somem quando rolar até a ponta) e duas
+     desenham a sombra atrás delas (fixas na viewport via attachment:scroll,
+     ficam visíveis só onde a cobertura não está por cima) -- sem JS. */
+  .table-scroll {
+    overflow-x: auto; max-height: 340px; overflow-y: auto;
+    background-image:
+      linear-gradient(to right, var(--surface-1) 50%, transparent),
+      linear-gradient(to left, var(--surface-1) 50%, transparent),
+      linear-gradient(to right, var(--border), transparent 12px),
+      linear-gradient(to left, var(--border), transparent 12px);
+    background-repeat: no-repeat;
+    background-size: 24px 100%, 24px 100%, 12px 100%, 12px 100%;
+    background-position: 0 0, 100% 0, 0 0, 100% 0;
+    background-attachment: local, local, scroll, scroll;
+  }
   .table-scroll--tall { max-height: 560px; }
+  .table-scroll { scrollbar-width: thin; scrollbar-color: var(--text-muted) transparent; }
+  .table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+  .table-scroll::-webkit-scrollbar-thumb { background: var(--text-muted); border-radius: 4px; }
+  .table-scroll::-webkit-scrollbar-track { background: transparent; }
   /* border-collapse:collapse + position:sticky on th is a known Chromium/Edge
      bug: body rows render visually offset from their header/column once the
      container scrolls. border-collapse:separate + border-spacing:0 is the
