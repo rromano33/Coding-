@@ -500,7 +500,14 @@ def _build_stat_tiles(report_df: pd.DataFrame) -> str:
     """VaR histórico e ES histórico aparecem POR CONFIANÇA configurada (se
     tiver 95% e 99%, os dois ficam lado a lado) -- são os dois números que
     mais importam comparar entre confianças. Vol não depende de confiança,
-    então aparece uma vez só por janela."""
+    então aparece uma vez só por janela.
+
+    Um <div class="stat-break"> depois de cada janela força o flex-wrap a
+    pular pra próxima linha ali (flex-basis:100%) -- sem isso, o número de
+    tiles por janela (2 por confiança + 1 de vol) raramente é múltiplo da
+    quantidade que cabe por linha, e o tile de Vol acaba caindo sozinho no
+    meio da linha da PRÓXIMA janela -- ficando fácil de confundir com o
+    grupo errado (ou de simplesmente não notar)."""
     tiles = []
     for window in report_df["janela"].unique():
         window_rows = report_df[report_df["janela"] == window]
@@ -509,6 +516,7 @@ def _build_stat_tiles(report_df: pd.DataFrame) -> str:
             tiles.append(_stat_tile(f"ES histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["es_historico"])))
         vol_row = window_rows.iloc[0]
         tiles.append(_stat_tile(f"Vol anualizada · {window}", _fmt_usd_compact(vol_row["vol_anualizada"])))
+        tiles.append('<div class="stat-break"></div>')
     return "".join(tiles)
 
 
@@ -677,6 +685,7 @@ _CSS = '''
     margin-bottom: 24px;
   }
   .stat-tile { background: var(--surface-1); padding: 16px 18px; flex: 1 1 200px; }
+  .stat-break { flex-basis: 100%; height: 0; margin: 0; padding: 0; }
   .stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.3; }
   .stat-value { font-size: 20px; font-weight: 600; font-variant-numeric: proportional-nums; }
   .card {
