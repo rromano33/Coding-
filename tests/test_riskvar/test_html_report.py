@@ -255,6 +255,17 @@ def test_render_report_html_dual_confidence_shows_both_in_stat_tiles():
     assert "ES histórico · 12M · 99%" in html
 
 
+def test_render_report_html_stat_tiles_show_daily_and_annualized_vol():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+    )
+    assert "Vol diária · 12M" in html
+    assert "Vol anualizada · 12M" in html
+
+
 def test_render_report_html_table_includes_es_and_breach_columns():
     report_df = _sample_report_df()
     performance = _synthetic_performance_series(252)

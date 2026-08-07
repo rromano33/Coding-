@@ -499,14 +499,14 @@ def _stat_tile(label: str, value: str) -> str:
 def _build_stat_tiles(report_df: pd.DataFrame) -> str:
     """VaR histórico e ES histórico aparecem POR CONFIANÇA configurada (se
     tiver 95% e 99%, os dois ficam lado a lado) -- são os dois números que
-    mais importam comparar entre confianças. Vol não depende de confiança,
-    então aparece uma vez só por janela.
+    mais importam comparar entre confianças. Vol (diária e anualizada) não
+    depende de confiança, então cada uma aparece uma vez só por janela.
 
     Um <div class="stat-break"> depois de cada janela força o flex-wrap a
     pular pra próxima linha ali (flex-basis:100%) -- sem isso, o número de
-    tiles por janela (2 por confiança + 1 de vol) raramente é múltiplo da
-    quantidade que cabe por linha, e o tile de Vol acaba caindo sozinho no
-    meio da linha da PRÓXIMA janela -- ficando fácil de confundir com o
+    tiles por janela (2 por confiança + 2 de vol) raramente é múltiplo da
+    quantidade que cabe por linha, e os tiles de Vol acabam caindo sozinhos
+    no meio da linha da PRÓXIMA janela -- ficando fácil de confundir com o
     grupo errado (ou de simplesmente não notar)."""
     tiles = []
     for window in report_df["janela"].unique():
@@ -515,6 +515,7 @@ def _build_stat_tiles(report_df: pd.DataFrame) -> str:
             tiles.append(_stat_tile(f"VaR histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["var_historico"])))
             tiles.append(_stat_tile(f"ES histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["es_historico"])))
         vol_row = window_rows.iloc[0]
+        tiles.append(_stat_tile(f"Vol diária · {window}", _fmt_usd_compact(vol_row["vol_diaria"])))
         tiles.append(_stat_tile(f"Vol anualizada · {window}", _fmt_usd_compact(vol_row["vol_anualizada"])))
         tiles.append('<div class="stat-break"></div>')
     return "".join(tiles)
