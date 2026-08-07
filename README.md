@@ -81,11 +81,35 @@ Projeto separado dentro do mesmo repo: lê uma planilha de posições
 (ativo, ticker BBG, tipo Notional/DV01, valor da posição — aba "Summary")
 e o histórico diário de preços/taxas de outra aba da mesma planilha
 ("Preços", preenchida no Excel via `=BDH(...)` da própria Bloomberg — ver
-`config/portfolio_risk.yaml`), e calcula VaR (histórico e paramétrico,
-95% de confiança) e vol do portfólio, usando janelas de estimação de 3M
-(63 dias úteis) e 12M (252 dias úteis). O VaR em si é sempre de 1 dia — o
-que muda entre as janelas é quanto histórico entra na amostra, não o
-horizonte projetado.
+`config/portfolio_risk.yaml`), e calcula, usando janelas de estimação de
+3M (63 dias úteis) e 12M (252 dias úteis):
+
+- **VaR** histórico e paramétrico (confiança configurável — `confidence_levels`
+  no config, por padrão 95% e 99% lado a lado).
+- **Expected Shortfall (ES/CVaR)** — perda média ALÉM do VaR, não só o
+  ponto de corte; padrão de referência do FRTB (Basel).
+- **Backtest em-amostra**: quantos dias, na própria amostra, a perda real
+  ultrapassou o VaR estimado, vs. o esperado só pela confiança escolhida
+  — mais informativo pro VaR paramétrico (estouros bem acima do esperado
+  indicam caudas mais gordas que a Normal assume).
+- **Benefício de diversificação**: soma dos VaRs de cada posição isolada
+  vs. o VaR real do portfólio (net) — quanto a correlação entre as
+  posições está reduzindo o risco total.
+- **Piores dias**: as 10 piores datas de P&L da janela mais longa.
+- Vol diária e anualizada.
+
+O VaR/ES em si são sempre de 1 dia — o que muda entre as janelas é
+quanto histórico entra na amostra, não o horizonte projetado.
+
+Opcionalmente, um **stress test por sensibilidade a fatores macro** (ex:
+"S&P -5%", "UST10y +20bps") — regressão linear do P&L do portfólio contra
+fatores configurados em `stress_factors`/`stress_scenarios` (cada fator
+precisa do próprio histórico como mais uma coluna na aba "Preços", mesmo
+mecanismo `=BDH(...)`). Isso é sensibilidade estatística contínua, não
+cenários de eventos históricos reais (Taper Tantrum, COVID etc.) — aqueles
+ainda não estão implementados, exigem pesquisa própria pra fixar magnitude/
+data certa por evento. Sem essas duas chaves no config, a seção é pulada
+sem erro.
 
 Não depende de sessão Bloomberg em Python (BBComm/xbbg) — só lê a
 planilha. Células `#N/A N/A` (sem cotação naquele dia) são descartadas
@@ -120,9 +144,10 @@ para uma **alta** de 1bp na taxa (mesma convenção de
 
 Além do CSV, o script gera um relatório HTML autocontido (abre offline, em
 qualquer navegador, sem precisar de internet) com os números principais em
-destaque, a tabela completa e um gráfico de P&L acumulado dos últimos 12
-meses, com crosshair/tooltip ao passar o mouse e uma vista em tabela
-alternativa.
+destaque, a tabela completa (VaR/ES/vol/estouros por janela e confiança),
+piores dias, benefício de diversificação, stress test (se configurado) e
+um gráfico de P&L acumulado dos últimos 12 meses, com crosshair/tooltip ao
+passar o mouse e uma vista em tabela alternativa.
 
 ## Arquitetura
 

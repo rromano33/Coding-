@@ -1,8 +1,15 @@
 """Lê a planilha do portfólio (posições + histórico de preços, já
 preenchido no Excel via Bloomberg) e calcula VaR (histórico e
-paramétrico) e vol do portfólio, usando janelas de 3M e 12M de dados
-históricos. VaR em si é sempre de 1 dia -- ver config/portfolio_risk.yaml
-e riskvar/var_metrics.py.
+paramétrico), Expected Shortfall, vol e benefício de diversificação do
+portfólio, usando janelas de 3M e 12M de dados históricos. VaR/ES em si
+são sempre de 1 dia -- ver config/portfolio_risk.yaml e
+riskvar/var_metrics.py.
+
+Também gera piores dias, uma checagem em-amostra de estouros de VaR
+(riskvar/var_metrics.count_breaches) e, se `stress_factors`/
+`stress_scenarios` estiverem configurados, um stress test por
+sensibilidade a fatores macro (ver riskvar/stress.py) -- OPCIONAL, pulado
+com um aviso se não configurado.
 
 Não depende de sessão Bloomberg em Python (BBComm/xbbg) -- o histórico
 vem pronto da aba "Preços" da própria planilha, puxado no Excel via
@@ -22,9 +29,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from riskvar.html_report import render_report_html, save_standalone_html
 from riskvar.loader import PortfolioLoader
-from riskvar.pnl_series import filter_positions_with_history, portfolio_pnl_series, risk_contribution_pct
+from riskvar.pnl_series import (
+    diversification_benefit,
+    filter_positions_with_history,
+    portfolio_pnl_series,
+    risk_contribution_pct,
+    worst_days,
+)
 from riskvar.price_history import load_price_history
 from riskvar.report import build_risk_report
+from riskvar.stress import factor_change_series, run_stress_scenarios
 
 
 CONFIG_PATH = Path("config/portfolio_risk.yaml")
@@ -65,8 +79,10 @@ def main() -> None:
     end = date.today()
     pnl_by_window = {}
     contributions_by_window = {}
+    price_histories_by_window = {}
     for window_label, n_days in settings["lookback_windows"].items():
         price_histories = {p.ticker: price_histories_full[p.ticker].tail(n_days + 1) for p in positions}
+        price_histories_by_window[window_label] = price_histories
         pnl_by_window[window_label] = portfolio_pnl_series(positions, price_histories).tail(n_days)
         contributions_by_window[window_label] = risk_contribution_pct(positions, price_histories)
 
@@ -83,9 +99,43 @@ def main() -> None:
     print(f"\nSalvo em {out_path}")
 
     # janela de performance = a mais longa configurada (tipicamente "12M") --
-    # o gráfico do HTML mostra o P&L acumulado ao longo dela.
+    # o gráfico do HTML mostra o P&L acumulado ao longo dela, e é também a
+    # janela usada pra diversificação/piores dias/stress test abaixo.
     performance_window = max(settings["lookback_windows"], key=settings["lookback_windows"].get)
     performance_series = pnl_by_window[performance_window].cumsum()
+    primary_confidence = settings["confidence_levels"][0]
+
+    diversification = diversification_benefit(
+        positions, price_histories_by_window[performance_window], primary_confidence
+    )
+    print(
+        f"\nBenefício de diversificação ({performance_window}): {diversification.benefit_pct:.0f}% "
+        f"(soma isolada ${diversification.standalone_var_sum:,.0f} -> portfólio ${diversification.portfolio_var:,.0f})"
+    )
+
+    worst = worst_days(pnl_by_window[performance_window], n=10)
+
+    stress_results = None
+    stress_factors_cfg = settings.get("stress_factors")
+    stress_scenarios_cfg = settings.get("stress_scenarios")
+    if stress_factors_cfg and stress_scenarios_cfg:
+        try:
+            factor_series = {}
+            for factor_name, factor_cfg in stress_factors_cfg.items():
+                ticker = factor_cfg["ticker"]
+                if ticker not in price_histories_full:
+                    raise KeyError(
+                        f"{ticker!r} (fator {factor_name!r}) não encontrado na aba "
+                        f"{price_history_cfg['sheet']!r} -- adicione o histórico dele lá (mesmo "
+                        "mecanismo =BDH(...) dos outros tickers) se quiser essa seção no relatório."
+                    )
+                factor_series[factor_name] = factor_change_series(price_histories_full[ticker], factor_cfg["kind"])
+            stress_results = run_stress_scenarios(pnl_by_window[performance_window], factor_series, stress_scenarios_cfg)
+            print("\nStress test:")
+            for r in stress_results:
+                print(f"  {r.name}: ${r.pnl_impact:,.0f} (R²={r.r_squared:.0%})")
+        except (KeyError, ValueError) as e:
+            print(f"\nStress test pulado: {e}")
 
     html_content = render_report_html(
         report,
@@ -96,6 +146,9 @@ def main() -> None:
         contributions_by_window=contributions_by_window,
         primary_window=performance_window,
         base_currency=settings.get("base_currency", "USD"),
+        diversification=diversification,
+        worst_days_df=worst,
+        stress_results=stress_results,
     )
     html_path = output_dir / f"var_report_{end}.html"
     save_standalone_html(html_content, html_path)

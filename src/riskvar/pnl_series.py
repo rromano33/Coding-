@@ -18,9 +18,12 @@ Duas convenções de posição (ver PortfolioPosition.position_type):
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pandas as pd
 
 from riskvar.loader import PortfolioPosition
+from riskvar.var_metrics import historical_var
 
 
 def position_pnl_series(position: PortfolioPosition, price_history: pd.Series) -> pd.Series:
@@ -88,3 +91,40 @@ def risk_contribution_pct(positions: list[PortfolioPosition], price_histories: d
     if not portfolio_var:
         return [100.0 / len(positions)] * len(positions)
     return [(frame[i].cov(portfolio) / portfolio_var) * 100.0 for i in range(len(positions))]
+
+
+@dataclass(frozen=True)
+class DiversificationBenefit:
+    standalone_var_sum: float  # soma dos VaRs de cada posição SOZINHA, como se cada uma fosse o portfólio inteiro
+    portfolio_var: float       # VaR real do portfólio (net, com toda a correlação entre posições já embutida)
+    benefit_pct: float         # 1 - portfolio_var/standalone_var_sum, em % -- quanto a diversificação "economiza"
+
+
+def diversification_benefit(
+    positions: list[PortfolioPosition], price_histories: dict[str, pd.Series], confidence: float
+) -> DiversificationBenefit:
+    """Soma dos VaRs "isolados" (cada posição como se fosse sozinha o
+    portfólio inteiro) vs. o VaR real do portfólio (net) -- a diferença é
+    o quanto a correlação entre as posições está reduzindo o risco total.
+    Usa VaR histórico, na mesma amostra/janela das outras métricas do
+    relatório.
+
+    benefit_pct positivo = diversificação ajudando (comum, quando as
+    posições não são perfeitamente correlacionadas). benefit_pct perto de
+    zero ou negativo = posições andando muito juntas (pouca diversificação
+    de verdade, ou hedges mal padronizados fazendo o net ficar maior que a
+    soma das partes -- caso raro, mas possível com poucas observações)."""
+    if not positions:
+        return DiversificationBenefit(standalone_var_sum=0.0, portfolio_var=0.0, benefit_pct=0.0)
+    frame = _aligned_position_pnl_frame(positions, price_histories)
+    standalone_var_sum = sum(historical_var(frame[i], confidence) for i in range(len(positions)))
+    portfolio_var = historical_var(frame.sum(axis=1), confidence)
+    benefit_pct = (1 - portfolio_var / standalone_var_sum) * 100.0 if standalone_var_sum else 0.0
+    return DiversificationBenefit(standalone_var_sum=standalone_var_sum, portfolio_var=portfolio_var, benefit_pct=benefit_pct)
+
+
+def worst_days(pnl: pd.Series, n: int = 10) -> pd.DataFrame:
+    """As N piores datas de P&L da série, perda maior primeiro -- contexto
+    rápido de "o que aconteceu" sem abrir a série inteira."""
+    worst = pnl.sort_values().head(n)
+    return pd.DataFrame({"data": worst.index.date, "pnl": worst.values})

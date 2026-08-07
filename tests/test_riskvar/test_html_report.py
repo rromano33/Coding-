@@ -236,3 +236,101 @@ def test_save_standalone_html_wraps_content_in_full_document(tmp_path):
     assert text.startswith("<!doctype html>")
     assert "<div>oi</div>" in text
     assert "<title>" in text
+
+
+def test_render_report_html_dual_confidence_shows_both_in_stat_tiles():
+    pnl_3m = pd.Series([100.0, -200.0, 300.0, -50.0] * 16)
+    pnl_12m = _synthetic_performance_series(252).diff().dropna()
+    report_df = build_risk_report({"3M": pnl_3m, "12M": pnl_12m}, [0.95, 0.99], 252)
+    performance = _synthetic_performance_series(252)
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+    )
+
+    assert "VaR histórico · 12M · 95%" in html
+    assert "VaR histórico · 12M · 99%" in html
+    assert "ES histórico · 12M · 95%" in html
+    assert "ES histórico · 12M · 99%" in html
+
+
+def test_render_report_html_table_includes_es_and_breach_columns():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+    )
+    assert "ES histórico" in html
+    assert "ES paramétrico" in html
+    assert "Estouros hist." in html
+    assert "Estouros param." in html
+
+
+def test_render_report_html_diversification_tile_appears_when_provided():
+    from riskvar.pnl_series import DiversificationBenefit
+
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    benefit = DiversificationBenefit(standalone_var_sum=1000.0, portfolio_var=600.0, benefit_pct=40.0)
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+        diversification=benefit,
+    )
+    assert "Benefício de diversificação" in html
+    assert "40%" in html
+
+
+def test_render_report_html_worst_days_table_appears_when_provided():
+    from riskvar.pnl_series import worst_days
+
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    pnl = pd.Series(
+        [100.0, -5000.0, 200.0, -3000.0],
+        index=pd.to_datetime([date(2026, 1, 1), date(2026, 1, 2), date(2026, 1, 3), date(2026, 1, 4)]),
+    )
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+        worst_days_df=worst_days(pnl, n=2),
+    )
+    assert "Piores dias · 12M" in html
+    assert "-$5,000" in html
+
+
+def test_render_report_html_stress_table_appears_when_provided():
+    from riskvar.stress import StressScenarioResult
+
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    stress_results = [
+        StressScenarioResult(name="S&P -5%", pnl_impact=-120_000.0, r_squared=0.42),
+        StressScenarioResult(name="UST10y +20bps", pnl_impact=45_000.0, r_squared=0.42),
+    ]
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+        stress_results=stress_results,
+    )
+    assert "Stress test" in html
+    assert "S&amp;P -5%" in html or "S&P -5%" in html
+    assert "-$120,000" in html
+    assert "42%" in html
+
+
+def test_render_report_html_omits_optional_sections_when_not_provided():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+    )
+    assert '<div class="stat-label">Benefício de diversificação' not in html
+    assert "Piores dias" not in html
+    assert "Stress test" not in html

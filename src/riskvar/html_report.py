@@ -496,17 +496,19 @@ def _stat_tile(label: str, value: str) -> str:
     return f'<div class="stat-tile"><div class="stat-label">{label}</div><div class="stat-value">{value}</div></div>'
 
 
-def _build_stat_tiles(report_df: pd.DataFrame, primary_confidence_label: str) -> str:
+def _build_stat_tiles(report_df: pd.DataFrame) -> str:
+    """VaR histórico e ES histórico aparecem POR CONFIANÇA configurada (se
+    tiver 95% e 99%, os dois ficam lado a lado) -- são os dois números que
+    mais importam comparar entre confianças. Vol não depende de confiança,
+    então aparece uma vez só por janela."""
     tiles = []
     for window in report_df["janela"].unique():
-        row = report_df[(report_df["janela"] == window) & (report_df["confianca"] == primary_confidence_label)]
-        if row.empty:
-            continue
-        r = row.iloc[0]
-        tiles.append(_stat_tile(f"VaR histórico · {window} · {primary_confidence_label}", _fmt_usd_compact(r["var_historico"])))
-        tiles.append(_stat_tile(f"VaR paramétrico · {window} · {primary_confidence_label}", _fmt_usd_compact(r["var_parametrico"])))
-        tiles.append(_stat_tile(f"Vol diária · {window}", _fmt_usd_compact(r["vol_diaria"])))
-        tiles.append(_stat_tile(f"Vol anualizada · {window}", _fmt_usd_compact(r["vol_anualizada"])))
+        window_rows = report_df[report_df["janela"] == window]
+        for _, r in window_rows.iterrows():
+            tiles.append(_stat_tile(f"VaR histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["var_historico"])))
+            tiles.append(_stat_tile(f"ES histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["es_historico"])))
+        vol_row = window_rows.iloc[0]
+        tiles.append(_stat_tile(f"Vol anualizada · {window}", _fmt_usd_compact(vol_row["vol_anualizada"])))
     return "".join(tiles)
 
 
@@ -518,20 +520,88 @@ def _build_report_table(report_df: pd.DataFrame) -> str:
         f"<td class=\"num\">{int(r['n_obs'])}</td>"
         f"<td class=\"num\">{_fmt_usd_full(r['var_historico'])}</td>"
         f"<td class=\"num\">{_fmt_usd_full(r['var_parametrico'])}</td>"
+        f"<td class=\"num\">{_fmt_usd_full(r['es_historico'])}</td>"
+        f"<td class=\"num\">{_fmt_usd_full(r['es_parametrico'])}</td>"
         f"<td class=\"num\">{_fmt_usd_full(r['vol_diaria'])}</td>"
         f"<td class=\"num\">{_fmt_usd_full(r['vol_anualizada'])}</td>"
+        f"<td class=\"num\">{int(r['n_breaches_historico'])} / {r['breaches_esperados']:.1f}</td>"
+        f"<td class=\"num\">{int(r['n_breaches_parametrico'])} / {r['breaches_esperados']:.1f}</td>"
         "</tr>"
         for _, r in report_df.iterrows()
     )
     return f'''
 <section class="card">
-  <h2>VaR e vol por janela de estimação</h2>
+  <h2>VaR, ES e vol por janela de estimação</h2>
   <div class="table-scroll">
     <table class="data-table">
-      <thead><tr><th>Janela</th><th>Confiança</th><th>N obs.</th><th>VaR histórico</th><th>VaR paramétrico</th><th>Vol diária</th><th>Vol anualizada</th></tr></thead>
+      <thead><tr>
+        <th>Janela</th><th>Confiança</th><th>N obs.</th>
+        <th>VaR histórico</th><th>VaR paramétrico</th>
+        <th>ES histórico</th><th>ES paramétrico</th>
+        <th>Vol diária</th><th>Vol anualizada</th>
+        <th>Estouros hist. / esperado</th><th>Estouros param. / esperado</th>
+      </tr></thead>
       <tbody>{rows}</tbody>
     </table>
   </div>
+  <p class="footer-note">ES (Expected Shortfall): perda média ALÉM do VaR, não só o ponto de corte —
+    padrão de referência do FRTB (Basel). "Estouros": quantos dias, na própria amostra, a perda real
+    ultrapassou o VaR estimado, vs. quanto seria esperado só pela confiança escolhida — é uma checagem
+    em-amostra (não um backtest walk-forward de verdade), mais informativa pro VaR PARAMÉTRICO (estouros
+    bem acima do esperado indicam que a distribuição real tem caudas mais gordas que a Normal assume;
+    pro VaR histórico o número fica perto do esperado quase por definição).</p>
+</section>'''
+
+
+def _build_diversification_tile(benefit) -> str:
+    return _stat_tile(
+        "Benefício de diversificação",
+        f"{benefit.benefit_pct:.0f}%",
+    )
+
+
+def _build_worst_days_table(worst_days_df: pd.DataFrame, window_label: str) -> str:
+    if worst_days_df.empty:
+        return ""
+    rows = "".join(
+        f'<tr><td>{r["data"]}</td><td class="num">{_fmt_usd_full(r["pnl"])}</td></tr>'
+        for _, r in worst_days_df.iterrows()
+    )
+    return f'''
+<section class="card">
+  <h2>Piores dias · {window_label}</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Data</th><th class="num">P&amp;L</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+</section>'''
+
+
+def _build_stress_table(stress_results) -> str:
+    if not stress_results:
+        return ""
+    rows = "".join(
+        f'<tr><td>{html.escape(r.name)}</td>'
+        f'<td class="num">{_fmt_usd_full(r.pnl_impact)}</td>'
+        f'<td class="num">{r.r_squared:.0%}</td></tr>'
+        for r in stress_results
+    )
+    return f'''
+<section class="card">
+  <h2>Stress test — sensibilidade a fatores</h2>
+  <div class="table-scroll">
+    <table class="data-table">
+      <thead><tr><th>Cenário</th><th class="num">Impacto no P&amp;L</th><th class="num">R²</th></tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+  <p class="footer-note">Impacto = sensibilidade histórica (regressão linear do P&amp;L do portfólio contra
+    os fatores configurados) aplicada ao choque do cenário — não é um cenário de evento histórico real,
+    é "e se esse choque específico acontecesse hoje, dado como esse book se comportou historicamente".
+    R² baixo (bem abaixo de 100%) indica que os fatores configurados explicam pouco do P&amp;L desse
+    book — leia o número do cenário com mais cautela nesse caso.</p>
 </section>'''
 
 
@@ -591,8 +661,14 @@ _CSS = '''
   .report-header h1 { font-size: 22px; font-weight: 600; margin: 0 0 4px; letter-spacing: -0.01em; }
   .report-header p { font-size: 13px; color: var(--text-secondary); margin: 0; }
   .stat-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    /* flex (não grid) -- com mais confianças configuradas, o nº de tiles
+       nem sempre é múltiplo de 4; um grid-template-columns fixo deixava
+       célula(s) vazia(s) mostrando o background do container (usado pro
+       efeito de gap colorido) como uma caixa cinza solta na última linha.
+       Com flex-wrap, os tiles da última linha incompleta esticam (flex:1)
+       pra preencher o espaço em vez de deixar buraco. */
+    display: flex;
+    flex-wrap: wrap;
     gap: 1px;
     background: var(--border);
     border: 1px solid var(--border);
@@ -600,7 +676,7 @@ _CSS = '''
     overflow: hidden;
     margin-bottom: 24px;
   }
-  .stat-tile { background: var(--surface-1); padding: 16px 18px; }
+  .stat-tile { background: var(--surface-1); padding: 16px 18px; flex: 1 1 200px; }
   .stat-label { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; line-height: 1.3; }
   .stat-value { font-size: 20px; font-weight: 600; font-variant-numeric: proportional-nums; }
   .card {
@@ -699,6 +775,9 @@ def render_report_html(
     contributions_by_window: dict[str, list[float]],
     primary_window: str,
     base_currency: str = "USD",
+    diversification=None,
+    worst_days_df: pd.DataFrame | None = None,
+    stress_results=None,
 ) -> str:
     """Retorna o conteúdo (CSS + corpo) do relatório -- sem <!doctype>/<html>/
     <head>/<body>, para ser embrulhado tanto por save_standalone_html quanto
@@ -708,8 +787,11 @@ def render_report_html(
     ao risco, mesma ordem/tamanho que `positions` (ver
     riskvar.pnl_series.risk_contribution_pct). `primary_window` decide por
     qual janela a tabela de ativos é ordenada (maior contribuição
-    absoluta primeiro)."""
-    primary_confidence_label = report_df["confianca"].iloc[0]
+    absoluta primeiro), e também é a janela usada pra diversificação/piores
+    dias/stress test (todos opcionais -- omita pra pular a seção).
+    `diversification`: riskvar.pnl_series.DiversificationBenefit, da janela
+    primária. `worst_days_df`: riskvar.pnl_series.worst_days(), da janela
+    primária. `stress_results`: list[riskvar.stress.StressScenarioResult]."""
     positions_table = _build_positions_table(positions, contributions_by_window, primary_window)
 
     primary_contributions = contributions_by_window.get(primary_window, [])
@@ -719,9 +801,13 @@ def render_report_html(
     pie_asset = _build_pie_chart("pie-asset", f"Contribuição por ativo · {primary_window}", by_asset)
     pie_row = f'<div class="pie-row">{pie_class}{pie_asset}</div>' if (pie_class or pie_asset) else ""
 
-    stat_tiles = _build_stat_tiles(report_df, primary_confidence_label)
+    stat_tiles = _build_stat_tiles(report_df)
+    if diversification is not None:
+        stat_tiles += _build_diversification_tile(diversification)
     performance_chart = _build_performance_chart(performance_series)
     report_table = _build_report_table(report_df)
+    worst_days_table = _build_worst_days_table(worst_days_df, primary_window) if worst_days_df is not None else ""
+    stress_table = _build_stress_table(stress_results)
 
     return f'''{_CSS}
 <div class="viz-root">
@@ -735,7 +821,9 @@ def render_report_html(
     <div class="stat-grid">{stat_tiles}</div>
     {performance_chart}
     {report_table}
-    <p class="footer-note">VaR de 1 dia, histórico e paramétrico (variância-covariância). "Janela" é o período de P&amp;L histórico usado para estimar cada métrica, não o horizonte do VaR.</p>
+    {worst_days_table}
+    {stress_table}
+    <p class="footer-note">VaR/ES de 1 dia, histórico e paramétrico (variância-covariância). "Janela" é o período de P&amp;L histórico usado para estimar cada métrica, não o horizonte do VaR. Benefício de diversificação: 1 - VaR do portfólio / soma dos VaRs de cada posição isolada.</p>
   </div>
 </div>
 '''

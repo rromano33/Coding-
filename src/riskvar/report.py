@@ -1,5 +1,7 @@
 """Monta a tabela final: uma linha por (janela, confiança), com VaR
-histórico, VaR paramétrico e vol (diária e anualizada)."""
+histórico, VaR paramétrico, Expected Shortfall (histórico e paramétrico),
+vol (diária e anualizada) e contagem de estouros (backtest em-amostra --
+ver var_metrics.count_breaches)."""
 from __future__ import annotations
 
 import pandas as pd
@@ -23,8 +25,13 @@ def build_risk_report(
                     "n_obs": m.n_obs,
                     "var_historico": m.var_historical,
                     "var_parametrico": m.var_parametric,
+                    "es_historico": m.es_historical,
+                    "es_parametrico": m.es_parametric,
                     "vol_diaria": m.daily_vol,
                     "vol_anualizada": m.annualized_vol,
+                    "n_breaches_historico": m.n_breaches_historical,
+                    "n_breaches_parametrico": m.n_breaches_parametric,
+                    "breaches_esperados": m.expected_breaches,
                 }
             )
     return pd.DataFrame(rows)

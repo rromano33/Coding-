@@ -57,8 +57,41 @@ lookback_windows:
   3M: 63
   12M: 252
 
-confidence_levels: [0.95]
+confidence_levels: [0.95, 0.99]   # mais de uma confiança aparece lado a lado nos tiles e na tabela detalhada
 
 trading_days_per_year: 252
 
 base_currency: "USD"   # só usado como rótulo no relatório HTML
+
+# Stress test por sensibilidade a fatores macro -- OPCIONAL. Se as duas
+# chaves abaixo (stress_factors/stress_scenarios) não estiverem aqui, ou
+# se algum ticker de fator não tiver histórico na aba "Preços", o relatório
+# só imprime um aviso e pula essa seção -- não quebra o resto do script.
+#
+# Isso é DIFERENTE de cravar cenários de eventos históricos reais (Taper
+# Tantrum, COVID etc.) -- é sensibilidade estatística contínua (regressão
+# linear do P&L do portfólio contra os fatores, ajustada na mesma janela
+# de 12M), então qualquer choque numérico já é calculável direto.
+#
+# Cada fator precisa do próprio histórico como mais uma coluna na MESMA
+# aba "Preços" (price_history acima) -- mesmo mecanismo =BDH(...) de
+# sempre, só que sem entrar na aba "Summary" de posições (fator não é uma
+# posição do book, é só uma referência).
+stress_factors:
+  spx:
+    ticker: "SPX Index"
+    kind: pct_return       # fator é um preço/nível -- variação diária = retorno %
+  ust10y:
+    ticker: "USGG10YR Index"
+    kind: bps_change       # fator é uma taxa/yield cotada em % -- variação diária = bps
+
+# "shocks" usa a MESMA unidade do fator (pct_return em decimal: -0.05 =
+# -5%; bps_change em bps: 20 = +20bps). Um cenário pode combinar vários
+# fatores -- o impacto final é a soma linear de cada choque.
+stress_scenarios:
+  - name: "S&P -5%"
+    shocks: {spx: -0.05}
+  - name: "UST10y +20bps"
+    shocks: {ust10y: 20}
+  - name: "Risk-off combinado"
+    shocks: {spx: -0.05, ust10y: 20}
