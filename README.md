@@ -149,6 +149,39 @@ piores dias, benefício de diversificação, stress test (se configurado) e
 um gráfico de P&L acumulado dos últimos 12 meses, com crosshair/tooltip ao
 passar o mouse e uma vista em tabela alternativa.
 
+### Versão interativa (cada trader digita as próprias posições)
+
+`scripts/run_var.py` gera o relatório oficial a partir da SUA planilha —
+posições e tudo. Pra distribuir pra mesa sem que cada pessoa precise
+mexer com Python/config/planilha, existe uma segunda ferramenta:
+
+```bash
+python scripts/build_interactive_var.py   # gera Data/processed/var_interativo_<data>.html
+```
+
+Gera um HTML autocontido diferente: embute só o **histórico de
+preços/taxas** (mesma aba "Preços", mesmos tickers) — nenhuma posição sua
+vai pro arquivo. Quem abrir digita as próprias posições (ticker, tipo,
+valor) direto no navegador e todos os números (VaR histórico/paramétrico,
+ES, vol, diversificação, piores dias, stress test) recalculam na hora, em
+JavaScript puro — sem Python, sem sessão Bloomberg, sem enviar planilha
+nenhuma. As posições digitadas não são salvas em lugar nenhum: ficam só
+na aba do navegador enquanto ela estiver aberta.
+
+Como o arquivo não tem como se conectar à Bloomberg depois de gerado, ele
+é uma **foto do mercado** presa na data em que rodou — o próprio HTML
+mostra isso num banner explícito no topo ("Dados de mercado até
+DD/MM/AAAA"). Pra atualizar os preços, rode o script nesse arquivo de novo
+e redistribua.
+
+A matemática em JS é uma tradução direta de `riskvar/var_metrics.py`,
+`riskvar/pnl_series.py` e `riskvar/stress.py` — qualquer mudança de
+fórmula precisa ser replicada nos dois lados e reverificada com:
+
+```bash
+python scripts/verify_interactive_var.py   # compara JS (via Playwright) vs Python num dataset sintético
+```
+
 ## Arquitetura
 
 ```
