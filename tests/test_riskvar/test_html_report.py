@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from riskvar.html_report import (
+    _build_positions_table,
     _group_and_cap,
     _group_contributions,
     _label_ink_for,
@@ -293,6 +294,83 @@ def test_render_report_html_diversification_tile_appears_when_provided():
     )
     assert "Benefício de diversificação" in html
     assert "40%" in html
+
+
+def test_render_report_html_diversification_row_shows_standalone_sum_and_portfolio_var():
+    from riskvar.pnl_series import DiversificationBenefit
+
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    benefit = DiversificationBenefit(standalone_var_sum=1000.0, portfolio_var=600.0, benefit_pct=40.0)
+
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+        diversification=benefit,
+    )
+    assert "Soma dos VaRs individuais" in html
+    assert "VaR do portfólio (net)" in html
+
+
+def test_render_report_html_stat_tiles_group_var_es_vol_in_separate_rows():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+    )
+    var_tile_pos = html.index("VaR histórico")
+    es_tile_pos = html.index("ES histórico · 12M")  # primeira ocorrência FORA da tabela detalhada aparece antes dela
+    vol_tile_pos = html.index("Vol diária · 12M")
+    breaks_between_var_and_es = html.count('<div class="stat-break">', var_tile_pos, es_tile_pos)
+    breaks_between_es_and_vol = html.count('<div class="stat-break">', es_tile_pos, vol_tile_pos)
+    assert breaks_between_var_and_es >= 1
+    assert breaks_between_es_and_vol >= 1
+
+
+def test_render_positions_table_includes_var_individual_column_when_provided():
+    positions = _sample_positions()
+    html = _build_positions_table(positions, _sample_contributions(), "12M", standalone_var=[12_345.0, 6_789.0])
+    assert "VaR individual" in html
+    assert "$12,345" in html
+    assert "$6,789" in html
+
+
+def test_render_positions_table_omits_var_individual_column_when_not_provided():
+    positions = _sample_positions()
+    html = _build_positions_table(positions, _sample_contributions(), "12M")
+    assert "VaR individual" not in html
+
+
+def test_render_report_html_correlation_table_appears_when_provided():
+    import pandas as pd
+
+    positions = _sample_positions()
+    corr_df = pd.DataFrame(
+        [[1.0, -0.3], [-0.3, 1.0]],
+        index=[p.asset for p in positions],
+        columns=[p.asset for p in positions],
+    )
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=positions, contributions_by_window=_sample_contributions(), primary_window="12M",
+        correlation_df=corr_df,
+    )
+    assert "Correlação entre ativos" in html
+    assert "-0.30" in html
+    assert "1.00" in html
+
+
+def test_render_report_html_correlation_table_omitted_when_not_provided():
+    report_df = _sample_report_df()
+    performance = _synthetic_performance_series(252)
+    html = render_report_html(
+        report_df, performance, date(2026, 7, 23), n_positions=2,
+        positions=_sample_positions(), contributions_by_window=_sample_contributions(), primary_window="12M",
+    )
+    assert "Correlação entre ativos" not in html
 
 
 def test_render_report_html_worst_days_table_appears_when_provided():

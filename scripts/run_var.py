@@ -30,10 +30,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from riskvar.html_report import render_report_html, save_standalone_html
 from riskvar.loader import PortfolioLoader
 from riskvar.pnl_series import (
+    correlation_matrix,
     diversification_benefit,
     filter_positions_with_history,
     portfolio_pnl_series,
     risk_contribution_pct,
+    standalone_var_by_position,
     worst_days,
 )
 from riskvar.price_history import load_price_history
@@ -114,6 +116,10 @@ def main() -> None:
     )
 
     worst = worst_days(pnl_by_window[performance_window], n=10)
+    standalone_var = standalone_var_by_position(
+        positions, price_histories_by_window[performance_window], primary_confidence
+    )
+    correlation_df = correlation_matrix(positions, price_histories_by_window[performance_window])
 
     stress_results = None
     stress_factors_cfg = settings.get("stress_factors")
@@ -149,6 +155,8 @@ def main() -> None:
         diversification=diversification,
         worst_days_df=worst,
         stress_results=stress_results,
+        standalone_var=standalone_var,
+        correlation_df=correlation_df,
     )
     html_path = output_dir / f"var_report_{end}.html"
     save_standalone_html(html_content, html_path)

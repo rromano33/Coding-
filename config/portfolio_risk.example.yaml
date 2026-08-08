@@ -84,6 +84,9 @@ stress_factors:
   ust10y:
     ticker: "USGG10YR Index"
     kind: bps_change       # fator é uma taxa/yield cotada em % -- variação diária = bps
+  brent:
+    ticker: "CO1 Comdty"   # futuro genérico de Brent (1º vencimento) -- confirme o ticker exato na sua planilha
+    kind: pct_return
 
 # "shocks" usa a MESMA unidade do fator (pct_return em decimal: -0.05 =
 # -5%; bps_change em bps: 20 = +20bps). Um cenário pode combinar vários
@@ -95,3 +98,5 @@ stress_scenarios:
     shocks: {ust10y: 20}
   - name: "Risk-off combinado"
     shocks: {spx: -0.05, ust10y: 20}
+  - name: "Brent +20%"
+    shocks: {brent: 0.20}

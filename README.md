@@ -92,24 +92,34 @@ e o histórico diário de preços/taxas de outra aba da mesma planilha
   ultrapassou o VaR estimado, vs. o esperado só pela confiança escolhida
   — mais informativo pro VaR paramétrico (estouros bem acima do esperado
   indicam caudas mais gordas que a Normal assume).
+- **VaR individual por posição**: VaR histórico de cada posição como se
+  fosse sozinha o portfólio inteiro (janela/confiança primárias) — coluna
+  própria na tabela de ativos, antes da contribuição %.
 - **Benefício de diversificação**: soma dos VaRs de cada posição isolada
-  vs. o VaR real do portfólio (net) — quanto a correlação entre as
-  posições está reduzindo o risco total.
+  vs. o VaR real do portfólio (net) — os dois valores em $ aparecem lado
+  a lado, seguidos do % que resume a diferença.
+- **Correlação entre ativos**: matriz de correlação de Pearson do P&L
+  diário, par a par — a base numérica do benefício de diversificação
+  acima (pares com correlação baixa/negativa são hedges de verdade).
 - **Piores dias**: as 10 piores datas de P&L da janela mais longa.
 - Vol diária e anualizada.
+
+Os tiles de VaR, ES e vol ficam em três linhas separadas por métrica (uma
+linha só de VaR — todas as janelas/confianças juntas —, uma só de ES,
+uma só de vol), não misturadas por janela.
 
 O VaR/ES em si são sempre de 1 dia — o que muda entre as janelas é
 quanto histórico entra na amostra, não o horizonte projetado.
 
 Opcionalmente, um **stress test por sensibilidade a fatores macro** (ex:
-"S&P -5%", "UST10y +20bps") — regressão linear do P&L do portfólio contra
-fatores configurados em `stress_factors`/`stress_scenarios` (cada fator
-precisa do próprio histórico como mais uma coluna na aba "Preços", mesmo
-mecanismo `=BDH(...)`). Isso é sensibilidade estatística contínua, não
-cenários de eventos históricos reais (Taper Tantrum, COVID etc.) — aqueles
-ainda não estão implementados, exigem pesquisa própria pra fixar magnitude/
-data certa por evento. Sem essas duas chaves no config, a seção é pulada
-sem erro.
+"S&P -5%", "UST10y +20bps", "Brent +20%") — regressão linear do P&L do
+portfólio contra fatores configurados em `stress_factors`/
+`stress_scenarios` (cada fator precisa do próprio histórico como mais uma
+coluna na aba "Preços", mesmo mecanismo `=BDH(...)`). Isso é sensibilidade
+estatística contínua, não cenários de eventos históricos reais (Taper
+Tantrum, COVID etc.) — aqueles ainda não estão implementados, exigem
+pesquisa própria pra fixar magnitude/data certa por evento. Sem essas duas
+chaves no config, a seção é pulada sem erro.
 
 Não depende de sessão Bloomberg em Python (BBComm/xbbg) — só lê a
 planilha. Células `#N/A N/A` (sem cotação naquele dia) são descartadas
@@ -163,7 +173,8 @@ Gera um HTML autocontido diferente: embute só o **histórico de
 preços/taxas** (mesma aba "Preços", mesmos tickers) — nenhuma posição sua
 vai pro arquivo. Quem abrir digita as próprias posições (ticker, tipo,
 valor) direto no navegador e todos os números (VaR histórico/paramétrico,
-ES, vol, diversificação, piores dias, stress test) recalculam na hora, em
+ES, vol, VaR individual por posição, contribuição %, correlação entre
+ativos, diversificação, piores dias, stress test) recalculam na hora, em
 JavaScript puro — sem Python, sem sessão Bloomberg, sem enviar planilha
 nenhuma. As posições digitadas não são salvas em lugar nenhum: ficam só
 na aba do navegador enquanto ela estiver aberta.

@@ -5,11 +5,13 @@ import pytest
 
 from riskvar.loader import PortfolioPosition
 from riskvar.pnl_series import (
+    correlation_matrix,
     diversification_benefit,
     filter_positions_with_history,
     portfolio_pnl_series,
     position_pnl_series,
     risk_contribution_pct,
+    standalone_var_by_position,
     worst_days,
 )
 from riskvar.var_metrics import historical_var
@@ -170,6 +172,55 @@ def test_diversification_benefit_empty_positions_returns_zeros():
     assert result.standalone_var_sum == 0.0
     assert result.portfolio_var == 0.0
     assert result.benefit_pct == 0.0
+
+
+def test_standalone_var_by_position_matches_diversification_sum():
+    pos1, prices1 = _dv01_position_with_bps_path("A", "A", 1.0, [10, -10, 10, -10, 10, -8])
+    pos2, prices2 = _dv01_position_with_bps_path("B", "B", 1.0, [3, -6, 9, -3, 6, -5])
+    positions, prices = [pos1, pos2], {"A": prices1, "B": prices2}
+
+    per_position = standalone_var_by_position(positions, prices, confidence=0.95)
+    div = diversification_benefit(positions, prices, confidence=0.95)
+
+    assert len(per_position) == 2
+    assert sum(per_position) == pytest.approx(div.standalone_var_sum)
+    pnl1 = position_pnl_series(pos1, prices1)
+    pnl2 = position_pnl_series(pos2, prices2)
+    assert per_position[0] == pytest.approx(historical_var(pnl1, 0.95))
+    assert per_position[1] == pytest.approx(historical_var(pnl2, 0.95))
+
+
+def test_standalone_var_by_position_empty_positions_returns_empty_list():
+    assert standalone_var_by_position([], {}, confidence=0.95) == []
+
+
+def test_correlation_matrix_is_one_on_diagonal_and_symmetric():
+    pos1, prices1 = _dv01_position_with_bps_path("A", "A", 1.0, [10, -10, 10, -10, 10, -8])
+    pos2, prices2 = _dv01_position_with_bps_path("B", "B", 1.0, [3, -6, 9, -3, 6, -5])
+    corr = correlation_matrix([pos1, pos2], {"A": prices1, "B": prices2})
+
+    assert list(corr.columns) == ["A", "B"]
+    assert corr.loc["A", "A"] == pytest.approx(1.0)
+    assert corr.loc["B", "B"] == pytest.approx(1.0)
+    assert corr.loc["A", "B"] == pytest.approx(corr.loc["B", "A"])
+
+
+def test_correlation_matrix_is_one_for_perfectly_correlated_positions():
+    pos1, prices1 = _dv01_position_with_bps_path("A", "A", 1.0, [10, -10, 10, -10, 10, -8])
+    pos2, prices2 = _dv01_position_with_bps_path("B", "B", 1.0, [10, -10, 10, -10, 10, -8])  # idêntico
+    corr = correlation_matrix([pos1, pos2], {"A": prices1, "B": prices2})
+    assert corr.loc["A", "B"] == pytest.approx(1.0)
+
+
+def test_correlation_matrix_is_minus_one_for_a_perfect_hedge():
+    pos1, prices1 = _dv01_position_with_bps_path("A", "A", 1.0, [10, -10, 10, -10, 10, -8])
+    pos2, prices2 = _dv01_position_with_bps_path("B", "B", -1.0, [10, -10, 10, -10, 10, -8])  # espelha o P&L de A
+    corr = correlation_matrix([pos1, pos2], {"A": prices1, "B": prices2})
+    assert corr.loc["A", "B"] == pytest.approx(-1.0)
+
+
+def test_correlation_matrix_empty_positions_returns_empty_dataframe():
+    assert correlation_matrix([], {}).empty
 
 
 def test_worst_days_returns_n_lowest_pnl_sorted_ascending():

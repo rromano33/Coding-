@@ -15,11 +15,13 @@ gerado a partir da SUA planilha real):
   topo do HTML deixa a data da última atualização bem explícita: quem
   receber o arquivo precisa saber até quando os preços valem.
 - Escopo intencionalmente menor que o relatório oficial: sem gráfico de
-  P&L acumulado nem contribuição por ativo/classe (dependeriam de mais
-  dados/; os números de risco em si -- VaR, ES, vol, diversificação,
-  piores dias, stress test -- são os mesmos cálculos, só que rodados em
-  JS em vez de em Python (ver PORT NOTE abaixo pra como cada fórmula foi
-  portada e verificada).
+  P&L acumulado nem pizza de contribuição por classe (a tabela de ativos
+  tem contribuição % por posição, só não agrupada visualmente por classe
+  -- essa ferramenta não pede uma "Classe" no editor de posições). Os
+  números de risco em si -- VaR, ES, vol, diversificação, correlação,
+  piores dias, stress test -- são os mesmos cálculos do relatório oficial,
+  só que rodados em JS em vez de em Python (ver PORT NOTE abaixo pra como
+  cada fórmula foi portada e verificada).
 
 PORT NOTE (importante ler antes de mexer no JS deste arquivo): a
 matemática (VaR histórico/paramétrico, ES, vol, quebra de estouros,
@@ -149,7 +151,9 @@ _BODY_TEMPLATE = '''
     </section>
 
     <div id="results-root" hidden>
+      <div id="positions-summary-container"></div>
       <div class="stat-grid" id="stat-grid"></div>
+      <div id="correlation-container"></div>
       <div id="report-table-container"></div>
       <div id="worst-days-container"></div>
       <div id="stress-container"></div>
@@ -258,6 +262,32 @@ function alignedFrame(seriesList) {
 function sumColumns(columns, dates) {
   return dates.map((_, i) => columns.reduce((s, col) => s + col[i], 0));
 }
+function covarianceSample(a, b) {
+  const ma = mean(a), mb = mean(b);
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += (a[i] - ma) * (b[i] - mb);
+  return s / (a.length - 1);
+}
+function riskContributionPct(columns, portfolioArr) {
+  // porta de risk_contribution_pct: beta_i = Cov(pnl_i, pnl_portfolio) / Var(pnl_portfolio),
+  // soma sempre 100% por construção. Fallback pra divisão igual se a
+  // variância do portfólio for zero (mesma regra do lado Python).
+  const portfolioVarStat = covarianceSample(portfolioArr, portfolioArr);
+  if (!portfolioVarStat) return columns.map(() => 100 / columns.length);
+  return columns.map(col => (covarianceSample(col, portfolioArr) / portfolioVarStat) * 100);
+}
+function correlationMatrix(columns) {
+  // NxN, porta de correlation_matrix (Pearson do P&L diário entre pares de posições).
+  const n = columns.length;
+  const stds = columns.map(col => stdSample(col));
+  const matrix = Array.from({length: n}, () => new Array(n).fill(0));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      matrix[i][j] = (stds[i] && stds[j]) ? covarianceSample(columns[i], columns[j]) / (stds[i] * stds[j]) : (i === j ? 1 : 0);
+    }
+  }
+  return matrix;
+}
 
 // ---- regressão multi-fator (porta de riskvar/stress.py) ----
 function gaussSolve(A, b) {
@@ -336,17 +366,19 @@ function readPositions() {
 }
 
 // ---- pipeline de janela: replica exatamente run_var.py -- tail(n+1) de
-// preço por posição, P&L alinhado (união+fillna0), tail(n) final no
-// resultado somado ----
-function windowPortfolioPnl(positions, nDays) {
+// preço por posição, P&L alinhado (união+fillna0) ----
+function windowAlignedFrame(positions, nDays) {
   const perPosition = positions.map(pos => {
     const prices = PRICE_HISTORY[pos.ticker].slice(-(nDays + 1));
     return positionPnlSeries(pos, prices);
   });
-  const { dates, columns } = alignedFrame(perPosition);
+  return alignedFrame(perPosition);
+}
+function windowPortfolioPnl(positions, nDays) {
+  const { dates, columns } = windowAlignedFrame(positions, nDays);
   const summed = sumColumns(columns, dates);
   const combined = dates.map((d, i) => [d, summed[i]]);
-  return combined.slice(-nDays);
+  return combined.slice(-nDays); // tail(n_days) final no resultado somado, mesma dupla-trim de run_var.py
 }
 
 function riskMetrics(pnlArr, confidence, tradingDaysPerYear) {
@@ -363,14 +395,13 @@ function riskMetrics(pnlArr, confidence, tradingDaysPerYear) {
   };
 }
 
-// ---- diversificação (porta de diversification_benefit) ----
-function diversificationBenefit(positions, nDays, confidence) {
-  const perPosition = positions.map(pos => {
-    const prices = PRICE_HISTORY[pos.ticker].slice(-(nDays + 1));
-    return positionPnlSeries(pos, prices);
-  });
-  const { dates, columns } = alignedFrame(perPosition);
-  const standaloneSum = columns.reduce((s, col) => s + historicalVar(col, confidence), 0);
+// ---- diversificação e VaR individual (porta de diversification_benefit / standalone_var_by_position) ----
+function standaloneVarByPosition(columns, confidence) {
+  return columns.map(col => historicalVar(col, confidence));
+}
+function diversificationBenefit(columns, dates, confidence) {
+  const standaloneVars = standaloneVarByPosition(columns, confidence);
+  const standaloneSum = standaloneVars.reduce((s, v) => s + v, 0);
   const portfolioVar = historicalVar(sumColumns(columns, dates), confidence);
   const benefitPct = standaloneSum ? (1 - portfolioVar / standaloneSum) * 100 : 0;
   return { standaloneSum, portfolioVar, benefitPct };
@@ -382,25 +413,65 @@ function worstDays(pnlPairs, n) {
 
 // ---- construção do HTML dos resultados ----
 function buildStatTiles(byWindow) {
+  // Três linhas por MÉTRICA (não por janela): VaR / ES / Vol -- mesmo
+  // agrupamento do relatório oficial (_build_stat_tiles em html_report.py).
+  const windows = Object.keys(CONFIG.lookback_windows);
   let html = '';
-  Object.keys(CONFIG.lookback_windows).forEach(window => {
-    const metricsByConf = byWindow[window];
+  windows.forEach(window => {
     CONFIG.confidence_levels.forEach(conf => {
-      const m = metricsByConf[conf];
-      const confLabel = fmtPct(conf);
-      html += statTile('VaR histórico · ' + window + ' · ' + confLabel, fmtUsdCompact(m.varHistorical));
-      html += statTile('ES histórico · ' + window + ' · ' + confLabel, fmtUsdCompact(m.esHistorical));
+      html += statTile('VaR histórico · ' + window + ' · ' + fmtPct(conf), fmtUsdCompact(byWindow[window][conf].varHistorical));
     });
-    const anyConf = CONFIG.confidence_levels[0];
-    const m0 = metricsByConf[anyConf];
+  });
+  html += '<div class="stat-break"></div>';
+  windows.forEach(window => {
+    CONFIG.confidence_levels.forEach(conf => {
+      html += statTile('ES histórico · ' + window + ' · ' + fmtPct(conf), fmtUsdCompact(byWindow[window][conf].esHistorical));
+    });
+  });
+  html += '<div class="stat-break"></div>';
+  windows.forEach(window => {
+    const m0 = byWindow[window][CONFIG.confidence_levels[0]];
     html += statTile('Vol diária · ' + window, fmtUsdCompact(m0.dailyVol));
     html += statTile('Vol anualizada · ' + window, fmtUsdCompact(m0.annualizedVol));
-    html += '<div class="stat-break"></div>';
   });
+  html += '<div class="stat-break"></div>';
   return html;
 }
-function buildDiversificationTile(div) {
-  return statTile('Benefício de diversificação', div.benefitPct.toFixed(0) + '%');
+function buildDiversificationRow(div) {
+  return statTile('Soma dos VaRs individuais', fmtUsdCompact(div.standaloneSum)) +
+    statTile('VaR do portfólio (net)', fmtUsdCompact(div.portfolioVar)) +
+    statTile('Benefício de diversificação', div.benefitPct.toFixed(0) + '%') +
+    '<div class="stat-break"></div>';
+}
+function buildPositionsTable(positions, standaloneVar, contributionsByWindow, windowNames) {
+  const rows = positions.map((pos, i) => {
+    const windowCells = windowNames.map(w => '<td class="num">' + (contributionsByWindow[w][i] >= 0 ? '+' : '') + contributionsByWindow[w][i].toFixed(1) + '%</td>').join('');
+    return '<tr><td>' + escapeHtml(pos.asset) + '</td><td>' + escapeHtml(pos.ticker) + '</td>' +
+      '<td>' + (pos.type === 'notional' ? 'NOTIONAL' : 'DV01') + '</td>' +
+      '<td class="num">' + fmtUsdCompact(pos.value) + (pos.type === 'dv01' ? '/bp' : '') + '</td>' +
+      '<td class="num">' + fmtUsdFull(standaloneVar[i]) + '</td>' + windowCells + '</tr>';
+  }).join('');
+  const windowHeaders = windowNames.map(w => '<th class="num">' + w + '</th>').join('');
+  return '<section class="card"><h2>Ativos do portfólio e contribuição ao risco</h2>' +
+    '<div class="table-scroll table-scroll--tall"><table class="data-table data-table--compact"><thead><tr>' +
+    '<th>Ativo</th><th>Ticker</th><th>Tipo</th><th class="num">Posição</th><th class="num">VaR individual</th>' +
+    windowHeaders + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<p class="footer-note">VaR individual = VaR histórico da posição isolada (janela/confiança primárias). ' +
+    'Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via ' +
+    'covariância) — soma sempre 100% dentro de cada janela. Valores negativos reduzem o risco do portfólio (hedge).</p>' +
+    '</section>';
+}
+function buildCorrelationTable(positions, corrMatrix, windowLabel) {
+  if (positions.length < 2) return '';
+  const header = positions.map(p => '<th class="num">' + escapeHtml(p.asset) + '</th>').join('');
+  const rows = positions.map((p, i) => '<tr><td>' + escapeHtml(p.asset) + '</td>' +
+    corrMatrix[i].map(v => '<td class="num">' + v.toFixed(2) + '</td>').join('') + '</tr>').join('');
+  return '<section class="card"><h2>Correlação entre ativos · ' + windowLabel + '</h2>' +
+    '<div class="table-scroll"><table class="data-table data-table--compact"><thead><tr><th></th>' + header + '</tr></thead>' +
+    '<tbody>' + rows + '</tbody></table></div>' +
+    '<p class="footer-note">Correlação de Pearson do P&amp;L diário entre cada par de posições — a base do ' +
+    'benefício de diversificação acima: pares com correlação baixa ou negativa (hedges de verdade) reduzem o ' +
+    'risco total do portfólio mais do que a soma simples dos VaRs isolados sugere. Diagonal sempre 1.00.</p></section>';
 }
 function buildReportTable(byWindow) {
   let rows = '';
@@ -463,13 +534,20 @@ function recompute() {
 
   const windowNames = Object.keys(CONFIG.lookback_windows);
   const primaryWindow = windowNames.reduce((a, b) => CONFIG.lookback_windows[a] >= CONFIG.lookback_windows[b] ? a : b);
+  const primaryConfidence = CONFIG.confidence_levels[0];
 
   const byWindow = {};
   const pnlPairsByWindow = {};
+  const contributionsByWindow = {};
+  let primaryFrame = null;
   windowNames.forEach(window => {
     const nDays = CONFIG.lookback_windows[window];
-    const pairs = windowPortfolioPnl(positions, nDays);
+    const frame = windowAlignedFrame(positions, nDays);
+    if (window === primaryWindow) primaryFrame = frame;
+    const summed = sumColumns(frame.columns, frame.dates);
+    const pairs = frame.dates.map((d, i) => [d, summed[i]]).slice(-nDays);
     pnlPairsByWindow[window] = pairs;
+    contributionsByWindow[window] = riskContributionPct(frame.columns, summed);
     const pnlArr = pairs.map(p => p[1]);
     const metricsByConf = {};
     CONFIG.confidence_levels.forEach(conf => { metricsByConf[conf] = riskMetrics(pnlArr, conf, CONFIG.trading_days_per_year); });
@@ -477,12 +555,17 @@ function recompute() {
   });
 
   const primaryNDays = CONFIG.lookback_windows[primaryWindow];
-  const div = diversificationBenefit(positions, primaryNDays, CONFIG.confidence_levels[0]);
+  const standaloneVar = standaloneVarByPosition(primaryFrame.columns, primaryConfidence);
+  const div = diversificationBenefit(primaryFrame.columns, primaryFrame.dates, primaryConfidence);
+  const corrMatrix = correlationMatrix(primaryFrame.columns);
   const worst = worstDays(pnlPairsByWindow[primaryWindow], 10);
 
+  document.getElementById('positions-summary-container').innerHTML =
+    buildPositionsTable(positions, standaloneVar, contributionsByWindow, windowNames);
   let statTilesHtml = buildStatTiles(byWindow);
-  statTilesHtml += buildDiversificationTile(div);
+  statTilesHtml += buildDiversificationRow(div);
   document.getElementById('stat-grid').innerHTML = statTilesHtml;
+  document.getElementById('correlation-container').innerHTML = buildCorrelationTable(positions, corrMatrix, primaryWindow);
   document.getElementById('report-table-container').innerHTML = buildReportTable(byWindow);
   document.getElementById('worst-days-container').innerHTML = buildWorstDaysTable(worst, primaryWindow);
 

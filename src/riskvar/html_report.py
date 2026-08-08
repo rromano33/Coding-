@@ -296,17 +296,27 @@ def _build_positions_table(
     positions: list[PortfolioPosition],
     contributions_by_window: dict[str, list[float]],
     primary_window: str,
+    standalone_var: list[float] | None = None,
 ) -> str:
     """Tabela plana (uma linha por posição, sem quebra por classe -- ver
     os gráficos de pizza logo abaixo para o recorte por classe), ordenada
     pela contribuição absoluta na janela primária, e clicável por coluna
-    pra reordenar (ver _SORTABLE_TABLE_SCRIPT)."""
+    pra reordenar (ver _SORTABLE_TABLE_SCRIPT).
+
+    "VaR individual" (se informado) é o VaR histórico de CADA posição como
+    se ela fosse sozinha todo o portfólio -- mesmo número, mesma janela e
+    confiança primárias, que soma exatamente riskvar.pnl_series.
+    diversification_benefit().standalone_var_sum (ver a linha "Soma dos
+    VaRs individuais" nos tiles) -- é o "antes" da diversificação, posição
+    por posição."""
     if not positions:
         return ""
     window_labels = list(contributions_by_window.keys())
     order = sorted(range(len(positions)), key=lambda i: -abs(contributions_by_window[primary_window][i]))
 
     fixed_headers = [("Ativo", "text"), ("Classe", "text"), ("Tipo", "text"), ("Posição", "num")]
+    if standalone_var is not None:
+        fixed_headers.append(("VaR individual", "num"))
     n_fixed = len(fixed_headers)
     primary_col_idx = n_fixed + window_labels.index(primary_window)
     header_cells_parts = [f'<th data-sort="{sort_type}">{label}</th>' for label, sort_type in fixed_headers]
@@ -321,6 +331,7 @@ def _build_positions_table(
         f'<td data-sort-value="{html.escape(positions[i].asset_class)}">{html.escape(positions[i].asset_class)}</td>'
         f'<td data-sort-value="{html.escape(positions[i].position_type)}">{html.escape(positions[i].position_type.upper())}</td>'
         f'<td class="num" data-sort-value="{positions[i].position_value}">{_fmt_position_value_compact(positions[i])}</td>'
+        + (f'<td class="num" data-sort-value="{standalone_var[i]}">{_fmt_usd_full(standalone_var[i])}</td>' if standalone_var is not None else "")
         + "".join(
             f'<td class="num" data-sort-value="{contributions_by_window[w][i]}">{contributions_by_window[w][i]:+.1f}%</td>'
             for w in window_labels
@@ -331,9 +342,12 @@ def _build_positions_table(
 
     # Larguras fixas via <colgroup> -- deixa a tabela previsível/alinhada
     # independente do conteúdo (nome de ativo comprido etc).
-    window_col_width = 34.0 / len(window_labels)
+    var_col = '<col style="width:14%">' if standalone_var is not None else ""
+    fixed_pct = 20 + 14 + 12 + 20 + (14 if standalone_var is not None else 0)
+    window_col_width = (100 - fixed_pct) / len(window_labels)
     colgroup = (
         '<colgroup><col style="width:20%"><col style="width:14%"><col style="width:12%"><col style="width:20%">'
+        + var_col
         + "".join(f'<col style="width:{window_col_width:.2f}%">' for _ in window_labels)
         + "</colgroup>"
     )
@@ -349,7 +363,7 @@ def _build_positions_table(
       <tbody>{rows}</tbody>
     </table>
   </div>
-  <p class="footer-note">Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
+  <p class="footer-note">{"VaR individual = VaR histórico da posição isolada (janela/confiança primárias). " if standalone_var is not None else ""}Contribuição = participação de cada ativo na variância do P&amp;L do portfólio (decomposição de Euler via covariância) — soma sempre 100% dentro de cada janela, por construção, e vale tanto para o VaR histórico quanto para o paramétrico. Valores negativos reduzem o risco do portfólio (hedge).</p>
 </section>
 {_SORTABLE_TABLE_SCRIPT}
 <script>window.__initSortableTable("positions-table");</script>'''
@@ -497,27 +511,29 @@ def _stat_tile(label: str, value: str) -> str:
 
 
 def _build_stat_tiles(report_df: pd.DataFrame) -> str:
-    """VaR histórico e ES histórico aparecem POR CONFIANÇA configurada (se
-    tiver 95% e 99%, os dois ficam lado a lado) -- são os dois números que
-    mais importam comparar entre confianças. Vol (diária e anualizada) não
-    depende de confiança, então cada uma aparece uma vez só por janela.
-
-    Um <div class="stat-break"> depois de cada janela força o flex-wrap a
-    pular pra próxima linha ali (flex-basis:100%) -- sem isso, o número de
-    tiles por janela (2 por confiança + 2 de vol) raramente é múltiplo da
-    quantidade que cabe por linha, e os tiles de Vol acabam caindo sozinhos
-    no meio da linha da PRÓXIMA janela -- ficando fácil de confundir com o
-    grupo errado (ou de simplesmente não notar)."""
+    """Três linhas separadas por MÉTRICA (não por janela): uma linha só de
+    VaR histórico (todas as janelas x confianças juntas), uma só de ES
+    histórico (idem) e uma só de vol (diária + anualizada, por janela --
+    não depende de confiança). Cada linha termina com um
+    <div class="stat-break"> que força o flex-wrap a pular pra próxima
+    linha ali (flex-basis:100%), senão o número de tiles raramente é
+    múltiplo do que cabe por linha e um tile acaba caindo sozinho no meio
+    da linha seguinte -- fácil de confundir com o grupo errado."""
+    windows = list(report_df["janela"].unique())
     tiles = []
-    for window in report_df["janela"].unique():
-        window_rows = report_df[report_df["janela"] == window]
-        for _, r in window_rows.iterrows():
+    for window in windows:
+        for _, r in report_df[report_df["janela"] == window].iterrows():
             tiles.append(_stat_tile(f"VaR histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["var_historico"])))
+    tiles.append('<div class="stat-break"></div>')
+    for window in windows:
+        for _, r in report_df[report_df["janela"] == window].iterrows():
             tiles.append(_stat_tile(f"ES histórico · {window} · {r['confianca']}", _fmt_usd_compact(r["es_historico"])))
-        vol_row = window_rows.iloc[0]
+    tiles.append('<div class="stat-break"></div>')
+    for window in windows:
+        vol_row = report_df[report_df["janela"] == window].iloc[0]
         tiles.append(_stat_tile(f"Vol diária · {window}", _fmt_usd_compact(vol_row["vol_diaria"])))
         tiles.append(_stat_tile(f"Vol anualizada · {window}", _fmt_usd_compact(vol_row["vol_anualizada"])))
-        tiles.append('<div class="stat-break"></div>')
+    tiles.append('<div class="stat-break"></div>')
     return "".join(tiles)
 
 
@@ -562,11 +578,43 @@ def _build_report_table(report_df: pd.DataFrame) -> str:
 </section>'''
 
 
-def _build_diversification_tile(benefit) -> str:
-    return _stat_tile(
-        "Benefício de diversificação",
-        f"{benefit.benefit_pct:.0f}%",
+def _build_diversification_row(benefit) -> str:
+    """Soma dos VaRs individuais e VaR do portfólio (net) lado a lado,
+    seguidos do % que resume a diferença -- os dois valores em $ por trás
+    do "Benefício de diversificação" também aparecem crus, não só o %."""
+    return (
+        _stat_tile("Soma dos VaRs individuais", _fmt_usd_compact(benefit.standalone_var_sum))
+        + _stat_tile("VaR do portfólio (net)", _fmt_usd_compact(benefit.portfolio_var))
+        + _stat_tile("Benefício de diversificação", f"{benefit.benefit_pct:.0f}%")
+        + '<div class="stat-break"></div>'
     )
+
+
+def _build_correlation_table(corr_df: pd.DataFrame, window_label: str) -> str:
+    if corr_df.empty or len(corr_df) < 2:
+        return ""
+    assets = list(corr_df.columns)
+    header = "".join(f'<th class="num">{html.escape(str(a))}</th>' for a in assets)
+    rows = "".join(
+        f'<tr><td>{html.escape(str(asset))}</td>'
+        + "".join(f'<td class="num">{corr_df.loc[asset, other]:.2f}</td>' for other in assets)
+        + "</tr>"
+        for asset in assets
+    )
+    return f'''
+<section class="card">
+  <h2>Correlação entre ativos · {window_label}</h2>
+  <div class="table-scroll">
+    <table class="data-table data-table--compact">
+      <thead><tr><th></th>{header}</tr></thead>
+      <tbody>{rows}</tbody>
+    </table>
+  </div>
+  <p class="footer-note">Correlação de Pearson do P&amp;L diário entre cada par de posições — a base do
+    benefício de diversificação acima: pares com correlação baixa (perto de 0) ou negativa (hedges de
+    verdade) reduzem o risco total do portfólio mais do que a soma simples dos VaRs isolados sugere.
+    Diagonal sempre 1.00 (ativo correlacionado com ele mesmo).</p>
+</section>'''
 
 
 def _build_worst_days_table(worst_days_df: pd.DataFrame, window_label: str) -> str:
@@ -812,6 +860,8 @@ def render_report_html(
     diversification=None,
     worst_days_df: pd.DataFrame | None = None,
     stress_results=None,
+    standalone_var: list[float] | None = None,
+    correlation_df: pd.DataFrame | None = None,
 ) -> str:
     """Retorna o conteúdo (CSS + corpo) do relatório -- sem <!doctype>/<html>/
     <head>/<body>, para ser embrulhado tanto por save_standalone_html quanto
@@ -822,11 +872,16 @@ def render_report_html(
     riskvar.pnl_series.risk_contribution_pct). `primary_window` decide por
     qual janela a tabela de ativos é ordenada (maior contribuição
     absoluta primeiro), e também é a janela usada pra diversificação/piores
-    dias/stress test (todos opcionais -- omita pra pular a seção).
-    `diversification`: riskvar.pnl_series.DiversificationBenefit, da janela
-    primária. `worst_days_df`: riskvar.pnl_series.worst_days(), da janela
-    primária. `stress_results`: list[riskvar.stress.StressScenarioResult]."""
-    positions_table = _build_positions_table(positions, contributions_by_window, primary_window)
+    dias/stress test/correlação (todos opcionais -- omita pra pular a
+    seção). `diversification`: riskvar.pnl_series.DiversificationBenefit,
+    da janela primária. `worst_days_df`: riskvar.pnl_series.worst_days(),
+    da janela primária. `stress_results`:
+    list[riskvar.stress.StressScenarioResult]. `standalone_var`:
+    riskvar.pnl_series.standalone_var_by_position(), mesma ordem que
+    `positions` (janela/confiança primárias) -- vira a coluna "VaR
+    individual" na tabela de ativos. `correlation_df`:
+    riskvar.pnl_series.correlation_matrix(), janela primária."""
+    positions_table = _build_positions_table(positions, contributions_by_window, primary_window, standalone_var)
 
     primary_contributions = contributions_by_window.get(primary_window, [])
     by_class = _group_contributions(positions, primary_contributions, lambda p: p.asset_class)
@@ -837,7 +892,8 @@ def render_report_html(
 
     stat_tiles = _build_stat_tiles(report_df)
     if diversification is not None:
-        stat_tiles += _build_diversification_tile(diversification)
+        stat_tiles += _build_diversification_row(diversification)
+    correlation_table = _build_correlation_table(correlation_df, primary_window) if correlation_df is not None else ""
     performance_chart = _build_performance_chart(performance_series)
     report_table = _build_report_table(report_df)
     worst_days_table = _build_worst_days_table(worst_days_df, primary_window) if worst_days_df is not None else ""
@@ -853,6 +909,7 @@ def render_report_html(
     {positions_table}
     {pie_row}
     <div class="stat-grid">{stat_tiles}</div>
+    {correlation_table}
     {performance_chart}
     {report_table}
     {worst_days_table}

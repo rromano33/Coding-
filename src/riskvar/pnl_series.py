@@ -93,6 +93,32 @@ def risk_contribution_pct(positions: list[PortfolioPosition], price_histories: d
     return [(frame[i].cov(portfolio) / portfolio_var) * 100.0 for i in range(len(positions))]
 
 
+def standalone_var_by_position(
+    positions: list[PortfolioPosition], price_histories: dict[str, pd.Series], confidence: float
+) -> list[float]:
+    """VaR histórico de CADA posição como se ela fosse sozinha o portfólio
+    inteiro -- mesmo cálculo usado dentro de diversification_benefit() pra
+    somar em standalone_var_sum, só que devolvido posição por posição (pra
+    mostrar na tabela de ativos, ao lado da contribuição %)."""
+    if not positions:
+        return []
+    frame = _aligned_position_pnl_frame(positions, price_histories)
+    return [historical_var(frame[i], confidence) for i in range(len(positions))]
+
+
+def correlation_matrix(positions: list[PortfolioPosition], price_histories: dict[str, pd.Series]) -> pd.DataFrame:
+    """Correlação de Pearson do P&L diário entre cada par de posições
+    (mesma janela alinhada usada no resto do relatório) -- a base
+    explicativa do benefício de diversificação: pares com correlação baixa
+    ou negativa são o que reduz o VaR do portfólio abaixo da soma dos VaRs
+    isolados. Linhas/colunas rotuladas pelo nome do ativo (não o ticker)."""
+    if not positions:
+        return pd.DataFrame()
+    frame = _aligned_position_pnl_frame(positions, price_histories)
+    frame.columns = [p.asset for p in positions]
+    return frame.corr()
+
+
 @dataclass(frozen=True)
 class DiversificationBenefit:
     standalone_var_sum: float  # soma dos VaRs de cada posição SOZINHA, como se cada uma fosse o portfólio inteiro
