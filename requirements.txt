@@ -6,3 +6,5 @@ pyyaml
 openpyxl
 pyarrow
 pytest
+streamlit    # só usado por streamlit_app/ (Sizing Tool) -- scripts/ e riskvar/ não dependem disso
+plotly       # idem, só streamlit_app/

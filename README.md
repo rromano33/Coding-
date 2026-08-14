@@ -193,6 +193,38 @@ fórmula precisa ser replicada nos dois lados e reverificada com:
 python scripts/verify_interactive_var.py   # compara JS (via Playwright) vs Python num dataset sintético
 ```
 
+## Sizing Tool (`streamlit_app/`)
+
+App **Streamlit** (roda local, não é um arquivo gerado/distribuído como os
+relatórios acima) que calcula o tamanho de posição (Notional ou DV01)
+ajustado pela volatilidade REALIZADA do ativo: você escolhe um múltiplo de
+desvio-padrão pro stop (ex: 1.5σ) em vez de um % fixo arbitrário, informa a
+perda máxima aceita em $ e o R/R desejado, e a ferramenta back-calcula o
+tamanho, o preço de stop e o preço-alvo. Mostra também a distribuição de
+retornos, o preço com as bandas de entrada/stop/alvo, vol realizada por
+janela (7D/15D/30D/60D) e vol móvel anualizada.
+
+Lê o histórico de preços do MESMO `config/portfolio_risk.yaml` que
+`run_var.py`/`build_interactive_var.py` usam (aba "Preços") — sem sessão
+Bloomberg em Python, mesmo motivo de sempre. Se a Bloomberg atualizar a
+planilha enquanto o app estiver rodando, use o botão "🔄 Recarregar
+preços" (o app cacheia a leitura, não fica relendo o Excel a cada clique).
+
+```bash
+pip install -r requirements.txt        # inclui streamlit + plotly agora
+streamlit run streamlit_app/sizing_tool.py
+```
+
+Abre sozinho no navegador em `http://localhost:8501`. `Ctrl+C` no
+terminal pra parar o servidor.
+
+A matemática (vol realizada, distância do stop, tamanho da posição) mora
+em `riskvar/sizing.py` -- funções puras, sem nada de Streamlit, testadas
+em `tests/test_riskvar/test_sizing.py`. `tests/test_streamlit_app/` testa
+o app de verdade (via `streamlit.testing.v1.AppTest`, sem navegador) contra
+uma planilha sintética, pra pegar erro de wiring de UI que só aparece
+rodando o app.
+
 ## Arquitetura
 
 ```
