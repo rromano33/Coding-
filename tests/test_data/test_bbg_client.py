@@ -17,15 +17,23 @@ class _FakeBlp:
     """Simula xbbg.blp: cada lote pedido em .bdh() volta cheio (dataframe
     normal), vazio pra sempre (`dead_batches`, sessão caída sem recuperar),
     ou vazio só nas primeiras N tentativas e depois se recupera
-    (`flaky_batches`, simulando o auto-reconnect do SDK)."""
+    (`flaky_batches`, simulando o auto-reconnect do SDK).
+
+    `bdp_response` permite simular tanto o formato "clássico" (DataFrame
+    indexado por ticker) quanto o formato longo (colunas ticker/field/
+    value, visto em pelo menos um build de xbbg em uso na mesa) e valores
+    vindo como texto em vez de float -- o bug real reportado (ver
+    test_last_prices_coerces_string_values_to_float)."""
 
     def __init__(
         self,
         dead_batches: set[frozenset] | None = None,
         flaky_batches: dict[frozenset, int] | None = None,
+        bdp_response: pd.DataFrame | None = None,
     ):
         self.dead_batches = dead_batches or set()
         self.flaky_batches = dict(flaky_batches or {})
+        self.bdp_response = bdp_response
         self.calls: list[list[str]] = []
 
     def bdh(self, tickers, flds, start_date, end_date):
@@ -37,6 +45,9 @@ class _FakeBlp:
             self.flaky_batches[key] -= 1
             return pd.DataFrame()
         return _bdh_df(tickers, [date(2026, 1, 1), date(2026, 1, 2)])
+
+    def bdp(self, tickers, flds):
+        return self.bdp_response
 
 
 def test_history_splits_requests_into_batches(tmp_path, monkeypatch):
@@ -108,6 +119,77 @@ def test_history_gives_up_a_batch_after_exhausting_retries(tmp_path, monkeypatch
         )
 
     assert len(fake.calls) == 3  # tentativa inicial + 2 retries
+
+
+def test_last_prices_returns_float_series_on_the_classic_shape(tmp_path, monkeypatch):
+    response = pd.DataFrame({"PX_LAST": [13.25, 10.90]}, index=["POLICY Index", "CURVE1 Curncy"])
+    fake = _FakeBlp(bdp_response=response)
+    monkeypatch.setattr(bbg_client_module, "blp", fake)
+    client = BbgClient(cache_dir=tmp_path)
+
+    prices = client.last_prices(["POLICY Index", "CURVE1 Curncy"])
+
+    assert prices["POLICY Index"] == pytest.approx(13.25)
+    assert prices.dtype.kind == "f"
+
+
+def test_last_prices_coerces_string_values_to_float(tmp_path, monkeypatch):
+    # Bug real reportado: um build de xbbg devolveu PX_LAST como texto --
+    # `prices[ticker] / 100.0` estourava TypeError ('str' e 'float') em
+    # scripts/run_daily_pricing.py antes desse fix.
+    response = pd.DataFrame({"PX_LAST": ["13.25", "10.90"]}, index=["POLICY Index", "CURVE1 Curncy"])
+    fake = _FakeBlp(bdp_response=response)
+    monkeypatch.setattr(bbg_client_module, "blp", fake)
+    client = BbgClient(cache_dir=tmp_path)
+
+    prices = client.last_prices(["POLICY Index", "CURVE1 Curncy"])
+
+    assert prices.dtype.kind == "f"
+    assert prices["POLICY Index"] / 100.0 == pytest.approx(0.1325)
+
+
+def test_last_prices_normalizes_long_format_and_coerces_to_float(tmp_path, monkeypatch):
+    # Formato longo (ticker/field/value) visto em pelo menos um build de
+    # xbbg em uso na mesa -- ver docstring de _normalize_bdp.
+    response = pd.DataFrame({
+        "ticker": ["POLICY Index", "CURVE1 Curncy"],
+        "field": ["PX_LAST", "PX_LAST"],
+        "value": ["13.25", "10.90"],
+    })
+    fake = _FakeBlp(bdp_response=response)
+    monkeypatch.setattr(bbg_client_module, "blp", fake)
+    client = BbgClient(cache_dir=tmp_path)
+
+    prices = client.last_prices(["POLICY Index", "CURVE1 Curncy"])
+
+    assert prices.dtype.kind == "f"
+    assert prices["POLICY Index"] == pytest.approx(13.25)
+
+
+def test_last_prices_raises_clear_error_when_field_missing(tmp_path, monkeypatch):
+    response = pd.DataFrame({"OTHER_FIELD": [1.0]}, index=["POLICY Index"])
+    fake = _FakeBlp(bdp_response=response)
+    monkeypatch.setattr(bbg_client_module, "blp", fake)
+    client = BbgClient(cache_dir=tmp_path)
+
+    with pytest.raises(RuntimeError, match="SessionConnectionDown|PX_LAST"):
+        client.last_prices(["POLICY Index"])
+
+
+def test_history_coerces_string_values_to_float(tmp_path, monkeypatch):
+    class _StringValuedBlp:
+        def bdh(self, tickers, flds, start_date, end_date):
+            columns = pd.MultiIndex.from_product([tickers, ["PX_LAST"]])
+            data = {(t, "PX_LAST"): ["100.0", "101.5"] for t in tickers}
+            return pd.DataFrame(data, index=pd.to_datetime([date(2026, 1, 1), date(2026, 1, 2)]), columns=columns)
+
+    monkeypatch.setattr(bbg_client_module, "blp", _StringValuedBlp())
+    client = BbgClient(cache_dir=tmp_path)
+
+    df = client.history(["A"], date(2026, 1, 1), date(2026, 1, 2), use_cache=False)
+
+    assert df["A"].dtype.kind == "f"
+    assert df["A"].iloc[0] == pytest.approx(100.0)
 
 
 def test_history_uses_cache_when_all_tickers_already_present(tmp_path, monkeypatch):

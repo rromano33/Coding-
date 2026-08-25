@@ -68,7 +68,13 @@ class BbgClient:
         raw = blp.bdp(tickers=tickers, flds=[field])
         df = self._normalize_bdp(raw)
         self._check_bdp_result(df, tickers, [field])
-        return df[field]
+        # Alguns builds de xbbg (ou o BDP em si, dependendo do override
+        # usado) devolvem o valor como texto em vez de float -- mesma
+        # cautela defensiva do resto do projeto (ver
+        # riskvar/price_history.py): nunca confiar no dtype que a fonte
+        # mandou, converter explicitamente. errors="coerce" vira NaN em
+        # vez de estourar TypeError na aritmética de quem chamar isso.
+        return pd.to_numeric(df[field], errors="coerce")
 
     def maturities(self, tickers: list[str]) -> pd.Series:
         """MATURITY reference field, direct from Bloomberg — the right way to resolve
@@ -162,6 +168,10 @@ class BbgClient:
             )
 
         df = pd.concat(frames, axis=1)
+        # Mesma cautela de last_prices() -- não confiar que o BDH devolveu
+        # float; converter explicitamente antes de cachear (senão o cache
+        # em parquet perpetua o dtype errado nas próximas leituras).
+        df = df.apply(pd.to_numeric, errors="coerce")
 
         if use_cache:
             df.to_parquet(cache_file)
