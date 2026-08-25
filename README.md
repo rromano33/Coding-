@@ -259,6 +259,14 @@ em USD direto) e um teste que confere o `config/fx_strategy.example.yaml`
 contra as escalas/tenores confirmados no terminal, pra pegar deriva se um
 lado mudar sem o outro.
 
+```bash
+python scripts/run_fx_carry.py   # carry atual (e médio 60d/full) de cada moeda EM x cada moeda de financiamento
+```
+
+Gera `Data/processed/fx_carry_<data>.csv` — bom pra conferir rapidamente
+que os dados da aba "Preços FX" e a fórmula batem com o esperado antes de
+avançar pra sinal/backtest.
+
 **Ainda não implementado**: sinal de trend, backtest, e o sizing/stop do
 book (a parte que motivou o projeto todo). Próximos passos, nessa ordem.
 

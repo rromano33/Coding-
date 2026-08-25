@@ -9,6 +9,7 @@
 # no Excel via =BDH(...) da Bloomberg, sem sessão Bloomberg em Python.
 paths:
   portfolio_xlsx: "Data/Portfolio.xlsx"
+  output_dir: "Data/processed"
 
 price_history:
   sheet: "Preços FX"
