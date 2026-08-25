@@ -1,0 +1,65 @@
+# TEMPLATE compartilhado (versionado) -- copie pra config/fx_strategy.yaml
+# (gitignored, pessoal) e ajuste paths.portfolio_xlsx se necessário. Mesmo
+# padrão de config/portfolio_risk.example.yaml.
+#
+# Fonte de dados: aba "Preços FX" do MESMO Portfolio.xlsx que já alimenta
+# riskvar (paths.portfolio_xlsx) -- aba SEPARADA da "Preços" de EM Rates,
+# pra não misturar os dois universos nem arriscar mexer no que
+# run_var.py/sizing_tool.py já leem. Mesmo mecanismo de sempre: preenchida
+# no Excel via =BDH(...) da Bloomberg, sem sessão Bloomberg em Python.
+paths:
+  portfolio_xlsx: "Data/Portfolio.xlsx"
+
+price_history:
+  sheet: "Preços FX"
+  ticker_row_label: "BBG"
+
+# Pares de trend (G10, spot) -- momentum/cruzamento de médias. Escopo de
+# sinal ainda não implementado (só a leitura de dados por enquanto) -- ver
+# fxstrategy/trend.py quando existir.
+trend_pairs:
+  - "EURUSD Curncy"
+  - "USDJPY Curncy"
+  - "GBPUSD Curncy"
+  - "USDCHF Curncy"
+  - "AUDUSD Curncy"
+  - "USDCAD Curncy"
+
+# Pernas de carry -- por FORWARD POINTS (não diferencial de taxa curta),
+# decisão explícita: forward points embutem prêmio de risco/liquidez que a
+# taxa pura não capta. Escala e tenor CONFIRMADOS direto na tela DES de
+# cada ticker no terminal -- não são uniformes entre moedas (JPY usa 2
+# casas de "Forward Scale" -- ÷100 -- as outras três usam 4 -- ÷10.000).
+# Ver fxstrategy/carry.py pra fórmula e sinal.
+carry_legs:
+  BRL:
+    spot_ticker: "USDBRL Curncy"
+    points_ticker_1m: "BCN1M Curncy"   # NDF -- não segue o padrão simples "BRL1M Curncy"
+    points_ticker_3m: "BCN3M Curncy"
+    scale: 10000
+  MXN:
+    spot_ticker: "USDMXN Curncy"
+    points_ticker_1m: "MXN1M Curncy"
+    points_ticker_3m: "MXN3M Curncy"
+    scale: 10000
+  ZAR:
+    spot_ticker: "USDZAR Curncy"
+    points_ticker_1m: "ZAR1M Curncy"
+    points_ticker_3m: "ZAR3M Curncy"
+    scale: 10000
+  JPY:
+    spot_ticker: "USDJPY Curncy"
+    points_ticker_1m: "JPY1M Curncy"
+    points_ticker_3m: "JPY3M Curncy"
+    scale: 100
+
+# Moeda(s) de financiamento a testar pro carry. "USD" é o caso trivial
+# (premium(USD)=0, carry = premium da perna EM sozinha). "JPY" combina as
+# duas pernas via fxstrategy.carry.carry_series(em_leg, funding_leg) --
+# não precisa de ticker EM/JPY direto (raramente cotado/líquido).
+funding_currencies: ["USD", "JPY"]
+
+# Tenor usado pros pontos a termo -- "1M" ou "3M" (chaves acima em
+# carry_legs). 3M tende a ser menos ruidoso que 1M pra sinal, mas ambos
+# ficam disponíveis pra comparar.
+carry_tenor: "3M"

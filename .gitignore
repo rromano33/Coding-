@@ -17,3 +17,8 @@ Data/processed/*
 # sem o config de um trader sobrescrever o de outro. Template compartilhado
 # fica em config/portfolio_risk.example.yaml (esse sim versionado).
 config/portfolio_risk.yaml
+
+# Idem, pro book de FX trend/carry (aba "Preços FX" do mesmo Portfolio.xlsx).
+# Template compartilhado em config/fx_strategy.example.yaml.
+config/fx_strategy.yaml
+

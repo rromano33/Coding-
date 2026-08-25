@@ -225,6 +225,43 @@ o app de verdade (via `streamlit.testing.v1.AppTest`, sem navegador) contra
 uma planilha sintética, pra pegar erro de wiring de UI que só aparece
 rodando o app.
 
+## Book de FX individual — trend + carry (`fxstrategy/`)
+
+Projeto novo, ainda em construção (só a perna de carry existe por
+enquanto): sinais de trend following (G10) e carry (BRL/MXN/ZAR
+financiado em USD ou JPY) pra um book individual, com stop por vol como
+peça central (reaproveita `riskvar/sizing.py` quando chegar nessa parte).
+
+Mesmo padrão de sempre pra dado: aba **"Preços FX"** do mesmo
+`Portfolio.xlsx` que já alimenta o `riskvar` (`config/fx_strategy.yaml` —
+copie de `config/fx_strategy.example.yaml`), separada da aba "Preços" de
+EM Rates pra não misturar os dois universos nem arriscar mexer no que os
+outros scripts já leem. Sem sessão Bloomberg em Python — mesmo mecanismo
+`=BDH(...)` no Excel.
+
+**Carry por forward points** (decisão explícita — não por diferencial de
+taxa curta, porque forward points embutem prêmio de risco/liquidez que a
+taxa pura não capta). Tickers e escalas de cada perna foram confirmados
+direto na tela `DES` do terminal Bloomberg (não são uniformes entre
+moedas — JPY usa escala ÷100, BRL/MXN/ZAR usam ÷10.000; BRL especificamente
+não segue o padrão simples `BRL1M Curncy` por ser NDF, o ticker certo é
+`BCN1M`/`BCN3M Curncy`). Fórmula e convenção de sinal em
+`fxstrategy/carry.py`:
+
+```
+premium(CCY) = (forward_points / escala) / spot * (365 / tenor_dias)   # ≈ r_CCY - r_USD, via paridade de juros coberta
+carry(EM financiado em Y) = premium(EM) - premium(Y)                    # Y="USD" é o caso trivial (premium(USD)=0)
+```
+
+Testado em `tests/test_fxstrategy/` — inclusive um teste de sinal
+(financiar em JPY, que rende menos que USD, dá carry maior que financiar
+em USD direto) e um teste que confere o `config/fx_strategy.example.yaml`
+contra as escalas/tenores confirmados no terminal, pra pegar deriva se um
+lado mudar sem o outro.
+
+**Ainda não implementado**: sinal de trend, backtest, e o sizing/stop do
+book (a parte que motivou o projeto todo). Próximos passos, nessa ordem.
+
 ## Arquitetura
 
 ```
