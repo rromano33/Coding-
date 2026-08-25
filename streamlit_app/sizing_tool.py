@@ -70,7 +70,12 @@ def _load_price_histories() -> dict[str, pd.Series]:
 def _price_chart(prices: pd.Series, trade_price: float, stop_price: float, target_price: float) -> go.Figure:
     recent = prices.tail(252)
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=recent.index, y=recent.values, mode="lines", name="Preço", line=dict(color="#2a78d6", width=1.5)))
+    # .to_numpy() explícito nos dois eixos -- não passar a Series/Index do
+    # pandas direto pro plotly: a camada de interop (narwhals) já quebrou
+    # uma vez numa mudança de versão maior do pandas (3.0), e a máquina de
+    # quem for rodar isso pode ter uma versão de pandas diferente da usada
+    # aqui pra testar.
+    fig.add_trace(go.Scatter(x=recent.index.to_numpy(), y=recent.to_numpy(), mode="lines", name="Preço", line=dict(color="#2a78d6", width=1.5)))
     for label, value, color in [("Entrada", trade_price, "#898781"), ("Stop", stop_price, "#d03b3b"), ("Alvo", target_price, "#006300")]:
         fig.add_hline(y=value, line=dict(color=color, width=1, dash="dot"), annotation_text=f"{label} {value:.4f}", annotation_position="right")
     fig.update_layout(title="Preço — últimos 12 meses", height=380, margin=dict(l=40, r=100, t=40, b=30), showlegend=False)
@@ -79,7 +84,7 @@ def _price_chart(prices: pd.Series, trade_price: float, stop_price: float, targe
 
 def _return_distribution_chart(changes: pd.Series, unit_label: str) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Histogram(x=changes, nbinsx=40, marker=dict(color="#2a78d6")))
+    fig.add_trace(go.Histogram(x=changes.to_numpy(), nbinsx=40, marker=dict(color="#2a78d6")))
     fig.update_layout(title="Distribuição de variações diárias", xaxis_title=f"Variação diária ({unit_label})",
                        yaxis_title="Frequência (dias)", height=380, margin=dict(l=40, r=20, t=40, b=40))
     return fig
@@ -89,7 +94,7 @@ def _rolling_vol_chart(changes: pd.Series, windows: dict[str, int], trading_days
     fig = go.Figure()
     for label, n_days in windows.items():
         rolling = changes.rolling(n_days).std() * (trading_days_per_year ** 0.5)
-        fig.add_trace(go.Scatter(x=rolling.index, y=rolling.values, mode="lines", name=label))
+        fig.add_trace(go.Scatter(x=rolling.index.to_numpy(), y=rolling.to_numpy(), mode="lines", name=label))
     fig.update_layout(title="Vol realizada móvel (anualizada)", height=380, margin=dict(l=40, r=20, t=40, b=30),
                        legend=dict(orientation="h", y=1.12))
     return fig

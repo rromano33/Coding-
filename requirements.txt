@@ -1,4 +1,9 @@
-xbbg
+xbbg<1.1    # pin -- a partir da 1.1, xbbg se registra como plugin do narwhals (a
+            # camada de interop que plotly usa) e essa integração TRAVA a importação
+            # -- não só a chamada, a importação -- sempre que a lib nativa da Bloomberg
+            # (libblpapi/blpapi) não está instalada. Isso quebra qualquer gráfico
+            # Plotly (streamlit_app/sizing_tool.py) mesmo sem nenhuma chamada a xbbg
+            # no caminho de código. xbbg==1.0.0 não tem esse plugin -- verificado.
 pandas
 numpy
 scipy
