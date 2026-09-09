@@ -11,3 +11,6 @@ Data/raw/*
 Data/processed/*
 !Data/raw/.gitkeep
 !Data/processed/.gitkeep
+
+# Projetos pessoais nesta pasta, com git próprio
+gastos-mae/
