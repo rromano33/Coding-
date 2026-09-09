@@ -38,6 +38,32 @@ O que isso significou na prática:
 - Se um dia quiser reativar Trades/Risco: o código funciona, só falta
   linkar de novo no `BottomNav`/`App.tsx` — os dados antigos não voltam
   sozinhos (foram apagados), mas dá pra reimportar do JSON acima se quiser.
+- **Bug real encontrado e corrigido (2026-09-09, mesmo dia do pivot)**:
+  já existia uma tabela `journal_entries` em produção, órfã de uma feature
+  de "diário emocional por trade" do **primeiro** commit do projeto
+  (`5e9fdb5`), removida depois em `5e8aab2` — só o model foi apagado, a
+  tabela nunca foi (sem Alembic, nada dropa tabela sozinho). Schema antigo:
+  `date`/`mood` (texto livre)/`discipline_score`/`content`, incompatível
+  com o novo `JournalEntry` (`text`/`mood` int). `create_all()` só cria
+  tabela que não existe, então viu a tabela e não corrigiu nada — toda
+  leitura/escrita no `/journal` novo quebrava em produção (era o que
+  causava "Carregando..." travado e "Salvar" que não salvava, sem
+  nenhum erro visível pro usuário — bug à parte, ver abaixo). Corrigido
+  renomeando a tabela antiga pra `journal_entries_legacy_2026_08` (não
+  apagada, só fora do caminho) e criando a `journal_entries` nova do
+  zero. Tinha 1 linha real lá dentro — uma entrada genuína de 03/08/2026
+  sobre frustração com a equipe — migrada pro schema novo (mood "frustrado"
+  mapeado pra 2/😕, editável pelo usuário se achar que devia ser outro).
+  Backup extra em `~/trading-diary-backups/legacy-journal-entries-2026-09-09.json`.
+  Se reaproveitar `journal_entries` como nome de tabela de novo no futuro,
+  **checar sempre se já existe no Turso antes de assumir que `create_all`
+  vai criar do jeito certo** — esse é o tipo de bug que esse padrão sem
+  migrations permite.
+- **Bug de UX corrigido junto**: `JournalPage` não tinha `.catch` nas
+  chamadas de API — uma falha (como a acima) deixava "Carregando..." pra
+  sempre e o botão "Salvar" voltava ao normal sem nenhuma mensagem,
+  parecendo que "não salvou" sem pista nenhuma do motivo. Agora tem estado
+  de erro visível com botão de retry no load e mensagem inline no form.
 - **Pushes diários mantidos, repurposed** (decisão explícita do usuário:
   "mantenha, porque isso me lembra de preencher o diário, mas não precisa
   de resultados"). `push_service.py`: `send_daily_reminder` (~17:30) e
@@ -100,7 +126,8 @@ trading-diary/
     auth/{AuthContext,LoginPage,RegisterPage}.tsx
     components/{Layout,BottomNav,ProtectedRoute,StatCard}.tsx
     pages/
-      JournalPage (tela inicial atual, ver "Pivot 2026-09-09" acima)
+      JournalPage (tela inicial atual, ver "Pivot 2026-09-09" acima —
+        histórico agrupado por mês/ano, com busca por data exata)
       TradesPage, TradeFormPage, TradeDetailPage (legado, sem link no nav)
       PerformancePage (legado, sem link no nav)
       DailyNotePage (legado, `/diario-macro`, sem link no nav)
