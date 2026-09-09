@@ -30,7 +30,7 @@ export default function RegisterPage() {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-semibold text-center mb-1">Criar conta</h1>
-        <p className="text-slate-400 text-center text-sm mb-8">Comece seu diário de trades</p>
+        <p className="text-slate-400 text-center text-sm mb-8">Comece seu diário</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label>Nome</label>

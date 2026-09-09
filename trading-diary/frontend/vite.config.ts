@@ -18,9 +18,9 @@ export default defineConfig({
       },
       includeAssets: ["icons/icon-192.png", "icons/icon-512.png"],
       manifest: {
-        name: "Diário de Trades",
-        short_name: "Trade Diário",
-        description: "Diário de trades, performance, mercado e impressões da mesa",
+        name: "Diário",
+        short_name: "Diário",
+        description: "Diário pessoal: pensamentos e mood do dia",
         theme_color: "#0f172a",
         background_color: "#0f172a",
         display: "standalone",

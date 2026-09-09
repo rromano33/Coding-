@@ -28,7 +28,7 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold text-center mb-1">Diário de Trades</h1>
+        <h1 className="text-2xl font-semibold text-center mb-1">Diário</h1>
         <p className="text-slate-400 text-center text-sm mb-8">Entre para continuar</p>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
