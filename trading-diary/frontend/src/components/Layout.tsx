@@ -8,7 +8,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen pb-20">
       <header className="sticky top-0 z-10 bg-slate-950/90 backdrop-blur border-b border-slate-800 px-4 py-3 flex items-center justify-between">
-        <span className="font-semibold text-slate-100">Diário de Trades</span>
+        <span className="font-semibold text-slate-100">Diário</span>
         <div className="flex items-center gap-3 text-sm text-slate-400">
           <span>{user?.display_name || user?.email}</span>
           <button onClick={logout} className="text-slate-500 hover:text-slate-300">

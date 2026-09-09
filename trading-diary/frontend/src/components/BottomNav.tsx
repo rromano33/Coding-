@@ -1,16 +1,13 @@
 import { NavLink } from "react-router-dom";
 
-const TABS = [
-  { to: "/", label: "Trades", icon: "📈", end: true },
-  { to: "/performance", label: "Performance", icon: "📊", end: false },
-  { to: "/diario", label: "Diário", icon: "📝", end: false },
-  { to: "/risco", label: "Risco", icon: "🛡️", end: false },
-];
+// App simplificado pra só um diário de texto + mood — as outras abas
+// (Trades/Performance/Risco) saíram da navegação, ver App.tsx.
+const TABS = [{ to: "/", label: "Diário", icon: "📝", end: true }];
 
 export default function BottomNav() {
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 pb-[env(safe-area-inset-bottom)]">
-      <div className="max-w-lg mx-auto grid grid-cols-4">
+      <div className="max-w-lg mx-auto grid grid-cols-1">
         {TABS.map((tab) => (
           <NavLink
             key={tab.to}

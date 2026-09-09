@@ -11,7 +11,7 @@ from app.models import PushSubscription, User
 logger = logging.getLogger(__name__)
 
 
-def send_push(db: Session, subscription: PushSubscription, title: str, body: str, url: str = "/risco") -> bool:
+def send_push(db: Session, subscription: PushSubscription, title: str, body: str, url: str = "/") -> bool:
     """Manda uma notificação push. Remove a subscription do banco se o endpoint não existir mais (410/404)."""
     try:
         webpush(
@@ -35,9 +35,14 @@ def send_push(db: Session, subscription: PushSubscription, title: str, body: str
 
 
 def send_daily_reminder(db: Session) -> None:
-    """Roda 1x/dia: manda um resumo de risco (ou lembrete simples) pra cada usuário com push ativo."""
-    from app.routers.risk import status as risk_status  # import tardio: evita ciclo de import no startup
+    """Roda 1x/dia (~17:30): lembra de escrever uma entrada no diário hoje.
 
+    Repurpose do pivot 2026-09-09 (ver CLAUDE.md) — antes mandava resumo de
+    risco/stops; o app não opera mais risco por trades, então virou um
+    lembrete simples de hábito, sem depender de nenhum dado financeiro.
+    Sempre manda (não checa se já escreveu hoje) — mesma lógica de sempre
+    mandar algo que o antigo fallback "trades abertos" já tinha.
+    """
     user_ids = {row[0] for row in db.query(PushSubscription.user_id).distinct().all()}
     if not user_ids:
         return
@@ -51,37 +56,29 @@ def send_daily_reminder(db: Session) -> None:
         if not subscriptions:
             continue
 
-        risk = risk_status(db=db, current_user=user)
-        stops = [a for a in risk.alerts if a.severity == "stop"]
-        alertas = [a for a in risk.alerts if a.severity == "alerta"]
-
-        if stops:
-            title = "🛑 Stop atingido"
-            body = stops[0].message if len(stops) == 1 else f"{len(stops)} stops atingidos. {stops[0].message}"
-        elif alertas:
-            title = "⚠️ Alerta de risco"
-            body = alertas[0].message if len(alertas) == 1 else f"{len(alertas)} alertas ativos. {alertas[0].message}"
-        else:
-            title = "Diário de trades"
-            body = f"{risk.trades_abertos} trade(s) aberto(s). Bora marcar preços e revisar o risco do dia."
-
+        title = "Diário"
+        body = "Como foi o dia? Escreve uma entrada no diário antes de fechar."
         for subscription in subscriptions:
             send_push(db, subscription, title, body)
 
 
-def send_yesterday_result_reminder(db: Session) -> None:
-    """Roda 1x/dia de manhã: lembra de lançar o resultado oficial de ontem no Diário.
+def send_morning_reminder(db: Session) -> None:
+    """Roda 1x/dia de manhã (~9h): lembra de escrever no diário.
 
-    Esse resultado (Rates/FX/Equities/Other) é a única fonte que alimenta o
-    risco (stops/drawdown/YTD) — sem ele, o dia fica de fora da conta.
+    Repurpose do pivot 2026-09-09 (ver CLAUDE.md) — antes lembrava de
+    lançar o resultado oficial de ontem por classe (Rates/FX/Equities/
+    Other) pro motor de risco; esse conceito não existe mais. Pula o
+    usuário se ele já escreveu alguma entrada hoje (mesma lógica de "pular
+    se já preenchido" do reminder antigo, só que contra `JournalEntry` em
+    vez de `DailyNote.pnl_*`).
     """
-    from app.models import DailyNote  # import tardio: evita ciclo de import no startup
+    from app.models import JournalEntry  # import tardio: evita ciclo de import no startup
 
     user_ids = {row[0] for row in db.query(PushSubscription.user_id).distinct().all()}
     if not user_ids:
         return
 
-    yesterday = (datetime.datetime.utcnow() - datetime.timedelta(days=1)).date()
+    today_start = datetime.datetime.combine(datetime.datetime.utcnow().date(), datetime.time.min)
 
     for user_id in user_ids:
         user = db.query(User).filter(User.id == user_id).first()
@@ -92,19 +89,16 @@ def send_yesterday_result_reminder(db: Session) -> None:
         if not subscriptions:
             continue
 
-        note = (
-            db.query(DailyNote)
-            .filter(DailyNote.user_id == user_id, DailyNote.date >= datetime.datetime.combine(yesterday, datetime.time.min))
-            .filter(DailyNote.date <= datetime.datetime.combine(yesterday, datetime.time.max))
+        wrote_today = (
+            db.query(JournalEntry)
+            .filter(JournalEntry.user_id == user_id, JournalEntry.created_at >= today_start)
             .first()
+            is not None
         )
-        already_filled = note is not None and any(
-            v is not None for v in (note.pnl_rates, note.pnl_fx, note.pnl_equities, note.pnl_other)
-        )
-        if already_filled:
+        if wrote_today:
             continue
 
-        title = "Resultado oficial de ontem"
-        body = f"Lança o resultado de {yesterday.strftime('%d/%m')} por classe (Rates/FX/Equities/Other) pra manter o risco atualizado."
+        title = "Bom dia"
+        body = "Não esquece de escrever no diário hoje."
         for subscription in subscriptions:
-            send_push(db, subscription, title, body, url="/diario")
+            send_push(db, subscription, title, body)

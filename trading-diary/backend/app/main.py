@@ -7,8 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
-from app.push_service import send_daily_reminder, send_yesterday_result_reminder
-from app.routers import auth, daily_notes, push, risk, risk_settings, stats, trades
+from app.push_service import send_daily_reminder, send_morning_reminder
+from app.routers import auth, daily_notes, journal, push, risk, risk_settings, stats, trades
 
 Base.metadata.create_all(bind=engine)
 
@@ -26,7 +26,7 @@ def _run_daily_reminder_job() -> None:
 def _run_morning_reminder_job() -> None:
     db = SessionLocal()
     try:
-        send_yesterday_result_reminder(db)
+        send_morning_reminder(db)
     finally:
         db.close()
 
@@ -80,6 +80,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(trades.router)
 app.include_router(daily_notes.router)
+app.include_router(journal.router)
 app.include_router(stats.router)
 app.include_router(risk_settings.router)
 app.include_router(risk.router)

@@ -1,3 +1,27 @@
+// ---- Journal (diário simplificado: texto + mood) ----
+
+export const MOODS: { value: number; emoji: string; label: string }[] = [
+  { value: 1, emoji: "😞", label: "Muito mal" },
+  { value: 2, emoji: "😕", label: "Mal" },
+  { value: 3, emoji: "😐", label: "Neutro" },
+  { value: 4, emoji: "🙂", label: "Bem" },
+  { value: 5, emoji: "😄", label: "Muito bem" },
+];
+
+export function moodEmoji(mood: number): string {
+  return MOODS.find((m) => m.value === mood)?.emoji ?? "❓";
+}
+
+export interface JournalEntry {
+  id: number;
+  text: string;
+  mood: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type JournalEntryInput = { text: string; mood: number };
+
 export type Direction = "long" | "short";
 export type TradeStatus = "open" | "closed";
 

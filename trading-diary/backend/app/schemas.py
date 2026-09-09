@@ -179,6 +179,30 @@ class DailyNotePrefill(BaseModel):
     posicoes: str | None = None
 
 
+# ---- Journal (diário simplificado: texto + mood) ----
+
+class JournalEntryBase(BaseModel):
+    text: str
+    mood: int  # 1-5, ver MOOD_LABELS em types_labels.py (frontend)
+
+
+class JournalEntryCreate(JournalEntryBase):
+    pass
+
+
+class JournalEntryUpdate(BaseModel):
+    text: str | None = None
+    mood: int | None = None
+
+
+class JournalEntryRead(JournalEntryBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
 # ---- Stats ----
 
 class PerformanceSummary(BaseModel):

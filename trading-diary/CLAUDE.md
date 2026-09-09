@@ -1,9 +1,55 @@
-# Diário de Trades — contexto do projeto
+# Diário — contexto do projeto
 
 Leia isto antes de mexer em qualquer coisa. Documenta o que já existe, por
 quê, e o que **não** reabrir sem necessidade real.
 
-## Objetivo do produto
+## Pivot 2026-09-09 — virou um diário simples de texto + mood
+
+O produto foi **totalmente repensado**: de um diário de trades completo
+(trades, framework de risco, diário macro estruturado) pra um diário pessoal
+simples — texto livre + 1 carinha de mood (5 pra começar, escala 1-5,
+extensível) por entrada, múltiplas entradas por dia. Decisão explícita do
+usuário: simplificar e só manter histórico pra olhar no futuro, não mais
+operar risco pelo app.
+
+O que isso significou na prática:
+
+- **Novo**: `JournalEntry` (`backend/app/models.py`) + rota `/journal`
+  (`backend/app/routers/journal.py`) + `frontend/src/pages/JournalPage.tsx`,
+  que agora é a tela inicial (`/`) e a única aba do `BottomNav`.
+- **Trades/Performance/Risco/Diário macro (`DailyNotePage`) saíram da
+  navegação, mas o código e as tabelas continuam existindo** (decisão do
+  usuário: reversível, não apagar código). Rotas ainda montadas em
+  `App.tsx`, só sem link: `/trades`, `/trades/new`, `/trades/:id[/edit]`,
+  `/performance`, `/diario-macro` (era `/diario`, renomeado pra abrir espaço
+  pro novo Diário), `/risco`, `/risco/opcoes`.
+- **Os dados de produção dessas tabelas foram exportados e apagados**
+  (decisão explícita do usuário, não só "esconder") em 2026-09-09: `trades`
+  (0 linhas — já estava zerado), `daily_notes` (162 linhas — 162 dias úteis
+  distintos de jan a ago/2026 com PnL por classe lançado diariamente, quase
+  todo o resto dos campos de texto vazio, só 2 dias com `comentario_geral`
+  preenchido), `risk_settings`/`conviction_tiers`/`stop_layers`/
+  `drawdown_phases`/`seasonal_postures` (framework de risco completo do
+  usuário). Backup em dois formatos, fora do git (dado financeiro pessoal):
+  `~/trading-diary-backups/pre-simplify-2026-09-09.sql` (dump completo do
+  banco) e `~/trading-diary-backups/pre-simplify-export-2026-09-09.json`
+  (só essas 7 tabelas, legível). `push_subscriptions` e `users` não foram
+  tocados.
+- Se um dia quiser reativar Trades/Risco: o código funciona, só falta
+  linkar de novo no `BottomNav`/`App.tsx` — os dados antigos não voltam
+  sozinhos (foram apagados), mas dá pra reimportar do JSON acima se quiser.
+- **Pushes diários mantidos, repurposed** (decisão explícita do usuário:
+  "mantenha, porque isso me lembra de preencher o diário, mas não precisa
+  de resultados"). `push_service.py`: `send_daily_reminder` (~17:30) e
+  `send_morning_reminder` (~9h, era `send_yesterday_result_reminder`)
+  agora mandam só um lembrete genérico de escrever no diário — nada de
+  resultado por classe/risco. `send_morning_reminder` pula o usuário se
+  ele já criou uma `JournalEntry` hoje (mesma lógica de "pular se já
+  preenchido" de antes, só que contra o diário novo). Ver "Push
+  notifications" abaixo pra infra (scheduler, GitHub Actions, VAPID) —
+  isso não mudou, só o conteúdo/gatilho de completude dos dois jobs.
+
+## Objetivo do produto (histórico — trades/risco, ver pivot acima)
 
 App pessoal (dono: um trader de mesa de operações) para três coisas:
 
@@ -46,7 +92,7 @@ trading-diary/
                            texto gerado em daily_notes.py
     risk_defaults.py       valores default de risco (seed on first access)
     routers/
-      auth.py, trades.py, daily_notes.py, stats.py
+      auth.py, trades.py, daily_notes.py, stats.py, journal.py
       risk_settings.py     CRUD dos parâmetros de risco
       risk.py               GET /risk/status (calculado, ver abaixo)
   frontend/src/
@@ -54,10 +100,11 @@ trading-diary/
     auth/{AuthContext,LoginPage,RegisterPage}.tsx
     components/{Layout,BottomNav,ProtectedRoute,StatCard}.tsx
     pages/
-      TradesPage, TradeFormPage, TradeDetailPage
-      PerformancePage
-      DailyNotePage (aba "Diário" — substitui os antigos Mercado + Diário)
-      RiskStatusPage (aba "Risco"), RiskSettingsPage (Opções, /risco/opcoes)
+      JournalPage (tela inicial atual, ver "Pivot 2026-09-09" acima)
+      TradesPage, TradeFormPage, TradeDetailPage (legado, sem link no nav)
+      PerformancePage (legado, sem link no nav)
+      DailyNotePage (legado, `/diario-macro`, sem link no nav)
+      RiskStatusPage, RiskSettingsPage (legado, sem link no nav)
     types.ts, utils/format.ts
 ```
 
@@ -170,11 +217,16 @@ trading-diary/
   - `app/push_service.py`:
     - `send_push` (pywebpush + VAPID, remove a subscription do banco se o
       endpoint responder 404/410).
-    - `send_daily_reminder` (~17:30): varre usuários com subscription
+    - `send_daily_reminder` (~17:30) e `send_morning_reminder` (~09:00):
+      descrição original abaixo (histórico, de quando ainda calculavam
+      `risk/status`/`pnl_por_classe`) — **repurposed no pivot 2026-09-09**,
+      ver seção "Pivot" no topo deste arquivo. Hoje os dois só mandam um
+      lembrete genérico de escrever no diário, sem nenhum dado financeiro.
+    - ~~`send_daily_reminder` (~17:30): varre usuários com subscription
       ativa, calcula `risk/status` de cada um e manda push — prioriza
       stop > alerta > lembrete genérico de trades abertos. É o momento
-      de comentar o dia (diário de fim de dia).
-    - `send_yesterday_result_reminder` (~09:00): lembra de lançar o
+      de comentar o dia (diário de fim de dia).~~
+    - ~~`send_yesterday_result_reminder` (~09:00): lembra de lançar o
       resultado oficial de ontem por classe no Diário
       (`pnl_rates`/`pnl_fx`/`pnl_equities`/`pnl_other`) — pula o usuário
       se esse dia já tiver alguma classe preenchida. Esse número é a

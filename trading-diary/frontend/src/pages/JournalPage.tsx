@@ -1,0 +1,132 @@
+import { useEffect, useState } from "react";
+import { journalApi } from "../api/endpoints";
+import { MOODS, moodEmoji, type JournalEntry } from "../types";
+import { formatDateTime } from "../utils/format";
+
+export default function JournalPage() {
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [mood, setMood] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+
+  function refresh() {
+    journalApi.list().then((data) => {
+      setEntries(data);
+      setLoading(false);
+    });
+  }
+
+  useEffect(refresh, []);
+
+  function startEdit(entry: JournalEntry) {
+    setEditingId(entry.id);
+    setText(entry.text);
+    setMood(entry.mood);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setText("");
+    setMood(null);
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!text.trim() || mood === null) return;
+    setSaving(true);
+    try {
+      if (editingId) {
+        await journalApi.update(editingId, { text, mood });
+      } else {
+        await journalApi.create({ text, mood });
+      }
+      cancelEdit();
+      refresh();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Excluir esta entrada?")) return;
+    await journalApi.remove(id);
+    refresh();
+  }
+
+  return (
+    <div>
+      <h1 className="text-xl font-semibold mb-4">Diário</h1>
+
+      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 space-y-3">
+        <textarea
+          rows={4}
+          placeholder="O que você está pensando?"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-100 placeholder:text-slate-500"
+        />
+        <div className="flex items-center justify-between gap-2">
+          {MOODS.map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => setMood(m.value)}
+              title={m.label}
+              aria-label={m.label}
+              className={`text-2xl leading-none rounded-full p-2 transition ${
+                mood === m.value ? "bg-green-600/30 ring-2 ring-green-500" : "hover:bg-slate-800"
+              }`}
+            >
+              {m.emoji}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={saving || !text.trim() || mood === null}
+            className="flex-1 bg-green-600 hover:bg-green-500 disabled:opacity-50 text-white font-medium py-2 rounded-lg"
+          >
+            {saving ? "Salvando..." : editingId ? "Salvar edição" : "Salvar"}
+          </button>
+          {editingId && (
+            <button type="button" onClick={cancelEdit} className="px-4 text-slate-400 text-sm">
+              Cancelar
+            </button>
+          )}
+        </div>
+      </form>
+
+      {loading && <p className="text-slate-500 text-sm">Carregando...</p>}
+      {!loading && entries.length === 0 && (
+        <p className="text-slate-500 text-sm text-center py-12">Nenhuma entrada ainda.</p>
+      )}
+
+      <div className="space-y-2">
+        {entries.map((entry) => (
+          <div key={entry.id} className="bg-slate-900 border border-slate-800 rounded-xl px-4 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2 min-w-0">
+                <span className="text-xl leading-none shrink-0">{moodEmoji(entry.mood)}</span>
+                <div className="min-w-0">
+                  <p className="text-xs text-slate-500">{formatDateTime(entry.created_at)}</p>
+                  <p className="text-slate-100 whitespace-pre-wrap break-words">{entry.text}</p>
+                </div>
+              </div>
+              <div className="flex gap-2 text-xs shrink-0">
+                <button onClick={() => startEdit(entry)} className="text-green-400">
+                  editar
+                </button>
+                <button onClick={() => handleDelete(entry.id)} className="text-red-400">
+                  excluir
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

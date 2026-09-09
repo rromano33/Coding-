@@ -30,6 +30,7 @@ class User(Base):
     drawdown_phases: Mapped[list["DrawdownPhase"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     seasonal_postures: Mapped[list["SeasonalPosture"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     push_subscriptions: Mapped[list["PushSubscription"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    journal_entries: Mapped[list["JournalEntry"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
 class Trade(Base):
@@ -230,6 +231,21 @@ class SeasonalPosture(Base):
     order_index: Mapped[int] = mapped_column(Integer, default=0)
 
     user: Mapped["User"] = relationship(back_populates="seasonal_postures")
+
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+
+    text: Mapped[str] = mapped_column(Text)
+    mood: Mapped[int] = mapped_column(Integer)  # 1-5, ver MOOD_LABELS (extensível pra além de 5 no futuro)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, index=True)
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    user: Mapped["User"] = relationship(back_populates="journal_entries")
 
 
 class PushSubscription(Base):

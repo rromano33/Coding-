@@ -11,7 +11,12 @@ import PerformancePage from "./pages/PerformancePage";
 import DailyNotePage from "./pages/DailyNotePage";
 import RiskStatusPage from "./pages/RiskStatusPage";
 import RiskSettingsPage from "./pages/RiskSettingsPage";
+import JournalPage from "./pages/JournalPage";
 
+// Trades/Performance/Risco/Diário macro (o antigo "diário de trades" completo)
+// saíram da navegação — o app virou um diário simples de texto + mood
+// (ver JournalPage). As rotas continuam montadas (código e dados de schema
+// intactos) só por reversibilidade; não tem mais link nenhum pra elas.
 export default function App() {
   return (
     <BrowserRouter>
@@ -21,12 +26,13 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
-              <Route path="/" element={<TradesPage />} />
+              <Route path="/" element={<JournalPage />} />
+              <Route path="/trades" element={<TradesPage />} />
               <Route path="/trades/new" element={<TradeFormPage />} />
               <Route path="/trades/:id" element={<TradeDetailPage />} />
               <Route path="/trades/:id/edit" element={<TradeFormPage />} />
               <Route path="/performance" element={<PerformancePage />} />
-              <Route path="/diario" element={<DailyNotePage />} />
+              <Route path="/diario-macro" element={<DailyNotePage />} />
               <Route path="/risco" element={<RiskStatusPage />} />
               <Route path="/risco/opcoes" element={<RiskSettingsPage />} />
             </Route>
